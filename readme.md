@@ -185,7 +185,7 @@ A mobile-first web application for playing the "Killer" or "Assassin" social gam
 
 ## Sprints
 
-### **Sprint 0: The Foundation Vibe**
+### Sprint 0: The Foundation Vibe
 
 **AI used:** DeepSeek with DeepThinking
 
@@ -251,6 +251,102 @@ The task is complete when I can:
 
 </div>
 
-#### Conclusion
+#### Conclusion about Deepseek
 
 The firsts steps of building the server using **Deepseek** where really easy and quick to do. But when it got to make the unit tests the results took multiple iterations before resulting into a functionnal code.
+
+### Sprint 1: Enhanced Lobby Vibe
+
+**AI used:** Claude Sonnet 4
+
+#### Setup
+
+1. Clone this repository
+2. Run the setup script: `./setup.sh` or `npm run setup`
+3. Start the server: `npm start`
+4. Open http://localhost:3000 in your browser
+
+**Testing:** to run unit tests do steps 1. and 2. before running `npm test`.
+
+#### Prompt
+
+<div  class="ai-response">
+
+**Role:** You are an expert full-stack Node.js developer. Your task is to extend the existing "Killer" game server from Sprint 0 to implement the complete game creation and player joining flow, using SQLite for persistence and Socket.IO for real-time updates. Key focus is on a flexible, user-friendly joining process and easy game sharing.
+
+**Project Context & State:**
+
+- **You are starting from a working Sprint 0 codebase.** The existing `server.js` serves a static `public/index.html` and establishes a basic Socket.IO connection.
+- **Sprint 1 Goal:** Implement the "Lobby Vibe" with revised user flows. A creator can start a game and easily share it. Players can tentatively select and change their identity before finalizing it.
+
+**Technical Constraints & Stack:** (Unchanged)
+
+- **Runtime:** Node.js
+- **Web Framework:** Express.js
+- **Real-Time Library:** Socket.IO
+- **Database:** SQLite with `better-sqlite3`
+- **Frontend:** Vanilla JS in HTML files. Use minimal, functional styling.
+- **Server File:** Continue using `server.js`.
+- **Port:** `3000`
+
+**Revised Requirements & Tasks:**
+
+**1. Database Initialization:** (Mostly Unchanged)
+
+- Modify `server.js` to require and initialize a SQLite database named `database.db`.
+- On server start, execute SQL to create the `games` and `players` tables.
+- **New Field:** Add a `joined_at` (DATETIME) column to the `players` table to track when a claim is finalized.
+
+**2. Create Game Flow (With Enhanced UX):**
+
+- **Frontend (`public/index.html`):** The form should now have:
+  - A textarea for "Player Names".
+  - **Two options for tasks:** 1) A textarea for "Tasks". 2) A file input (`<input type="file">`) labeled "Or upload a text file (one task per line)".
+  - The "Create Game" button.
+- **Backend (`server.js`):** The POST endpoint `/api/create-game` must now:
+  - Handle both plain text _and_ a file upload for the task list. Parse the content of the uploaded file (if provided) as plain text, splitting it by newlines to create the task array.
+  - **Crucially,** upon successfully creating the game, the response must include the **full, shareable URL** (e.g., `{ gameCode: 'ABCD12', joinUrl: 'http://your-ip:3000/game/ABCD12' }`).
+- **New Frontend Behavior:** After creation, `index.html` should display a success message with the `joinUrl`. **This URL must be displayed in a prominent, easily selectable text box (`<input readonly>`) with a "Copy Link" button next to it** to facilitate sharing.
+
+**3. Game Lobby Page & The New Joining Process:**
+
+- **Frontend (`public/game.html`):** The flow for a new player is now a two-step process:
+  1.  **Selection Phase:** The page displays the list of players with status `'not-joined'`. Next to each name is a "Select" button.
+      - Clicking a "Select" button highlights that choice visually (e.g., changes its background color) on the _client only_. **This action does not communicate with the server yet.**
+      - A player can click "Select" on different names; only the last one selected is considered their tentative choice.
+      - A "Confirm My Identity" button appears once a name is selected. Also, a "Cancel Selection" button should allow them to clear their choice.
+  2.  **Confirmation Phase:** When the user clicks "Confirm My Identity", _then_ the client emits the `claim-identity` event to the server with the chosen name.
+- **Backend (Handling `claim-identity`):** Logic remains the same: validate, generate a `session_token`, update the database (`status='alive'`, set `joined_at` to current time), and broadcast the updated player list.
+- **New Feature: Cancellation:** For players who have already joined (`status='alive'`), display a "I'm Not [Player Name]" (Cancel) button.
+  - Clicking this button emits a new `cancel-identity` event to the server with the `gameCode` and the player's `session_token`.
+  - The server handles this:
+    - Validates the `session_token` matches the player.
+    - Updates the player's record: sets `status` back to `'not-joined'`, and clears the `session_token` and `joined_at`.
+    - Broadcasts the updated player list to the entire game room.
+  - The client that cancelled should then clear its `session_token` from `localStorage` and revert to the **Selection Phase** view.
+
+**4. Creator Logic & Start Button:** (Unchanged in logic, but the button should be visible and functional based on the new player statuses).
+
+**Definition of Done for This Revised Sprint:**
+The task is complete when I can:
+
+1.  Create a game, see a shareable link in a copyable input box, and use a file upload to provide tasks.
+2.  Open the game lobby URL on a phone.
+3.  **Select one name, then change my mind and select another, all without affecting the server-state.**
+4.  Click "Confirm My Identity" to finalize my choice, seeing the lobby update for all users.
+5.  Click a "Cancel" button to relinquish my identity, see the lobby update, and be able to choose a different name.
+6.  Start the game once all players have finalized their identities.
+
+**Please provide the complete code for:**
+
+1.  The updated `server.js` (including new API endpoint logic, the new `cancel-identity` socket event handler, and file upload handling using a middleware like `express-fileupload` or `multer`).
+2.  The updated `public/index.html` (with file upload and link display).
+3.  The updated `public/game.html` (with the new multi-step joining interface).
+4.  Instructions to install any new NPM packages (e.g., `express-fileupload`).
+
+</div>
+
+#### Conclusion about Claude Sonnet 4
+
+Impressive performances. Code running at first try, even refactored it imediatly when I detailed some UI specifications.
+Very user-friendly with its file visualisation feature. Far moreadapted to the code than Deepseek.

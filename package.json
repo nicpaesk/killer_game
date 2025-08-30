@@ -7,8 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test",
-    "setup": "./setup.sh"
+    "setup": "./setup.sh",
+    "test": "node --test  --test-concurrency=1 test/*.test.js",
+    "test:watch": "node --test  --test-concurrency=1 --watch test/*.test.js",
+    "test:coverage": "node --test  --test-concurrency=1 --experimental-test-coverage test/*.test.js"
   },
   "keywords": [
     "game",
@@ -18,10 +20,14 @@
   "author": "Alex Cardona",
   "license": "ISC",
   "dependencies": {
+    "better-sqlite3": "^12.2.0",
     "express": "^5.1.0",
-    "socket.io": "^4.8.1"
+    "express-fileupload": "^1.5.2",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "jsdom": "^23.2.0",
     "socket.io-client": "^4.8.1"
   },
   "engines": {

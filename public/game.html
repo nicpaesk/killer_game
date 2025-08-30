@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Killer Game - Lobby</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .game-code {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 30px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .players-container {
+            margin-bottom: 30px;
+        }
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            transition: all 0.2s ease;
+        }
+        .player-info {
+            display: flex;
+            align-items: center;
+        }
+        .player-name {
+            font-size: 16px;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+        .player-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-not-joined {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .status-alive {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .player-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .select-btn, .claim-btn, .cancel-btn, .confirm-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .select-btn {
+            background-color: #6c757d;
+            color: white;
+        }
+        .select-btn:hover {
+            background-color: #5a6268;
+        }
+        .select-btn.selected {
+            background-color: #007bff;
+            color: white;
+        }
+        .confirm-btn {
+            background-color: #28a745;
+            color: white;
+        }
+        .confirm-btn:hover {
+            background-color: #218838;
+        }
+        .cancel-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        .cancel-btn:hover {
+            background-color: #c82333;
+        }
+        .start-game-container {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+        }
+        .start-btn {
+            padding: 15px 30px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .start-btn:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+        .start-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #dc3545;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            display: none;
+        }
+        .connection-status {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .my-player {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+        }
+        .tentatively-selected {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+            border-width: 2px;
+        }
+        .selection-phase-container {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .selection-phase-container.active {
+            display: block;
+        }
+        .phase-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        .selected-player-name {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .confirm-identity-container {
+            text-align: center;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Game Lobby</h1>
+        <div id="gameCode" class="game-code">Loading...</div>
+        
+        <div id="connectionStatus" class="connection-status disconnected">
+            Connecting...
+        </div>
+        
+        <!-- Selection Phase UI -->
+        <div id="selectionPhaseContainer" class="selection-phase-container">
+            <div class="phase-title">Select Your Identity</div>
+            <p>You have tentatively selected: <span id="selectedPlayerName" class="selected-player-name">None</span></p>
+            <div class="confirm-identity-container">
+                <button id="confirmIdentityBtn" class="confirm-btn" disabled>Confirm My Identity</button>
+            </div>
+        </div>
+        
+        <div class="players-container">
+            <h2>Players:</h2>
+            <div id="playersList">
+                Loading players...
+            </div>
+        </div>
+        
+        <div id="startGameContainer" class="start-game-container" style="display: none;">
+            <button id="startGameBtn" class="start-btn" disabled>Start Game</button>
+            <p><small>All players must join before the game can start</small></p>
+        </div>
+        
+        <div id="error" class="error"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Extract game code from URL
+        const gameCode = window.location.pathname.split('/').pop();
+        const socket = io();
+        let myPlayerName = null;
+        let isCreator = false;
+        let tentativelySelectedPlayer = null;
+        let mySessionToken = null;
+        
+        // Check if this user is the creator
+        const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+        if (creatorToken) {
+            isCreator = true;
+        }
+        
+        // Get my session token (if I've already claimed an identity)
+        mySessionToken = localStorage.getItem(`session_${gameCode}`);
+        
+        // Update game code display
+        document.getElementById('gameCode').textContent = `Game Code: ${gameCode}`;
+        
+        // Socket connection events
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateConnectionStatus(true);
+            socket.emit('join-game', gameCode);
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            updateConnectionStatus(false);
+        });
+        
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+            showError(error.message);
+        });
+        
+        // Game-specific events
+        socket.on('player-list-update', (players) => {
+            console.log('Player list updated:', players);
+            renderPlayerList(players);
+            updateStartButton(players);
+            updateSelectionPhaseUI(players);
+        });
+        
+        socket.on('identity-confirmed', (data) => {
+            console.log('Identity confirmed:', data);
+            myPlayerName = data.playerName;
+            mySessionToken = data.sessionToken;
+            tentativelySelectedPlayer = null;
+            
+            // Store session token
+            localStorage.setItem(`session_${gameCode}`, data.sessionToken);
+            localStorage.setItem(`player_name_${gameCode}`, data.playerName);
+            
+            // Hide selection phase UI
+            document.getElementById('selectionPhaseContainer').classList.remove('active');
+        });
+        
+        socket.on('identity-canceled', (data) => {
+            console.log('Identity canceled:', data);
+            myPlayerName = null;
+            mySessionToken = null;
+            tentativelySelectedPlayer = null;
+            
+            // Clear stored data
+            localStorage.removeItem(`session_${gameCode}`);
+            localStorage.removeItem(`player_name_${gameCode}`);
+            
+            // Reset selection phase UI
+            updateSelectionPhaseDisplay();
+        });
+        
+        // Confirm identity button handler
+        document.getElementById('confirmIdentityBtn').addEventListener('click', () => {
+            if (tentativelySelectedPlayer) {
+                console.log('Confirming identity:', tentativelySelectedPlayer);
+                socket.emit('claim-identity', {
+                    gameCode: gameCode,
+                    playerName: tentativelySelectedPlayer
+                });
+            }
+        });
+        
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connectionStatus');
+            if (connected) {
+                statusDiv.textContent = 'Connected to game';
+                statusDiv.className = 'connection-status connected';
+            } else {
+                statusDiv.textContent = 'Disconnected - trying to reconnect...';
+                statusDiv.className = 'connection-status disconnected';
+            }
+        }
+        
+        function renderPlayerList(players) {
+            const playersList = document.getElementById('playersList');
+            
+            if (players.length === 0) {
+                playersList.innerHTML = '<p>No players found for this game.</p>';
+                return;
+            }
+            
+            playersList.innerHTML = players.map(player => {
+                const isMe = player.session_token === mySessionToken;
+                const canSelect = player.status === 'not-joined';
+                const isTentativelySelected = tentativelySelectedPlayer === player.name;
+                
+                let playerItemClass = 'player-item';
+                if (isMe) {
+                    playerItemClass += ' my-player';
+                } else if (isTentativelySelected) {
+                    playerItemClass += ' tentatively-selected';
+                }
+                
+                return `
+                    <div class="${playerItemClass}">
+                        <div class="player-info">
+                            <span class="player-name">${player.name} ${isMe ? '(You)' : ''}</span>
+                            <span class="player-status ${player.status === 'alive' ? 'status-alive' : 'status-not-joined'}">
+                                ${player.status === 'alive' ? 'Joined' : 'Not Joined'}
+                            </span>
+                        </div>
+                        <div class="player-actions">
+                            ${canSelect && !mySessionToken ? `
+                                <button class="select-btn ${isTentativelySelected ? 'selected' : ''}" 
+                                        onclick="selectPlayer('${player.name}')">
+                                    ${isTentativelySelected ? 'Selected' : 'Select'}
+                                </button>
+                            ` : ''}
+                            ${isMe ? `
+                                <button class="cancel-btn" onclick="cancelIdentity()">
+                                    Cancel Registration
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectPlayer(playerName) {
+            console.log('Tentatively selecting player:', playerName);
+            
+            // Update tentative selection
+            if (tentativelySelectedPlayer === playerName) {
+                // Deselect if clicking the same player
+                tentativelySelectedPlayer = null;
+            } else {
+                tentativelySelectedPlayer = playerName;
+            }
+            
+            // Update UI immediately (re-render player list to show selection)
+            socket.emit('join-game', gameCode); // Refresh player list to update UI
+            
+            updateSelectionPhaseDisplay();
+        }
+        
+        function cancelIdentity() {
+            if (mySessionToken) {
+                console.log('Canceling identity');
+                socket.emit('cancel-identity', {
+                    gameCode: gameCode,
+                    sessionToken: mySessionToken
+                });
+            }
+        }
+        
+        function updateSelectionPhaseUI(players) {
+            const container = document.getElementById('selectionPhaseContainer');
+            
+            // Show selection phase UI if user hasn't claimed an identity yet
+            if (!mySessionToken) {
+                container.classList.add('active');
+            } else {
+                container.classList.remove('active');
+            }
+            
+            updateSelectionPhaseDisplay();
+        }
+        
+        function updateSelectionPhaseDisplay() {
+            const selectedNameSpan = document.getElementById('selectedPlayerName');
+            const confirmBtn = document.getElementById('confirmIdentityBtn');
+            
+            if (tentativelySelectedPlayer) {
+                selectedNameSpan.textContent = tentativelySelectedPlayer;
+                confirmBtn.disabled = false;
+            } else {
+                selectedNameSpan.textContent = 'None';
+                confirmBtn.disabled = true;
+            }
+        }
+        
+        function updateStartButton(players) {
+            if (!isCreator) {
+                return; // Don't show start button if not creator
+            }
+            
+            const container = document.getElementById('startGameContainer');
+            const startBtn = document.getElementById('startGameBtn');
+            
+            container.style.display = 'block';
+            
+            // Check if all players have joined
+            const allJoined = players.length > 0 && players.every(player => player.status === 'alive');
+            
+            startBtn.disabled = !allJoined;
+            
+            if (allJoined) {
+                startBtn.textContent = 'Start Game';
+            } else {
+                const joinedCount = players.filter(p => p.status === 'alive').length;
+                startBtn.textContent = `Waiting for players (${joinedCount}/${players.length})`;
+            }
+        }
+        
+        // Start game button handler
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            // This will be implemented in later sprints
+            alert('Game start functionality will be implemented in the next sprint!');
+        });
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            
+            // Hide error after 5 seconds
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Load saved player name if exists
+        const savedPlayerName = localStorage.getItem(`player_name_${gameCode}`);
+        if (savedPlayerName) {
+            myPlayerName = savedPlayerName;
+        }
+    </script>
+</body>
+</html>

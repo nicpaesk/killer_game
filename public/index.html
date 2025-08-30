@@ -3,15 +3,395 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Killer Game</title>
+    <title>Killer Game - Create Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            font-family: monospace;
+            resize: vertical;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            cursor: pointer;
+        }
+        input[type="file"]:hover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        .task-input-options {
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 15px;
+            background-color: #fafafa;
+        }
+        .option-label {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .option-group {
+            margin-bottom: 15px;
+        }
+        .option-group:last-child {
+            margin-bottom: 0;
+        }
+        .or-divider {
+            text-align: center;
+            margin: 15px 0;
+            position: relative;
+        }
+        .or-divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background-color: #ddd;
+        }
+        .or-divider span {
+            background: #fafafa;
+            padding: 0 15px;
+            color: #666;
+            font-style: italic;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            display: none;
+        }
+        .success-container {
+            display: none;
+            text-align: center;
+        }
+        .success-message {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .join-url-container {
+            margin: 20px 0;
+        }
+        .join-url-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .join-url-input {
+            flex: 1;
+            font-family: monospace;
+            background-color: #f8f9fa;
+        }
+        .copy-btn, .go-to-game-btn {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .copy-btn:hover {
+            background-color: #218838;
+        }
+        .go-to-game-btn {
+            width: 100%;
+            margin-top: 15px;
+            background-color: #007bff;
+            padding: 15px;
+        }
+        .go-to-game-btn:hover {
+            background-color: #0056b3;
+        }
+        .file-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .create-another-btn {
+            background-color: #6c757d;
+            margin-top: 10px;
+        }
+        .create-another-btn:hover {
+            background-color: #5a6268;
+        }
+    </style>
 </head>
 <body>
-    <h1>Killer Game - Lobby</h1>
-    <p>Hello World</p>
-    
-    <script src="/socket.io/socket.io.js"></script>
+    <div class="container">
+        <h1>Create Killer Game</h1>
+        
+        <!-- Game Creation Form -->
+        <div id="createForm">
+            <form id="createGameForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="playerNames">Player Names (one per line):</label>
+                    <textarea id="playerNames" rows="8" placeholder="Alice&#10;Bob&#10;Charlie&#10;Diana" required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="option-label">Tasks:</label>
+                    <div class="task-input-options">
+                        <div class="option-group">
+                            <label for="tasks">Type tasks (one per line):</label>
+                            <textarea id="tasks" rows="6" placeholder="Make them laugh&#10;Get them to say 'banana'&#10;High five them&#10;Make them dance"></textarea>
+                        </div>
+                        
+                        <div class="or-divider">
+                            <span>OR</span>
+                        </div>
+                        
+                        <div class="option-group">
+                            <label for="taskFile">Upload a text file with tasks:</label>
+                            <input type="file" id="taskFile" accept=".txt,.text" />
+                            <div class="file-info">Upload a plain text file with one task per line</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" id="createBtn">Create Game</button>
+                <div id="error" class="error"></div>
+            </form>
+        </div>
+        
+        <!-- Success Message and Share Link -->
+        <div id="successContainer" class="success-container">
+            <div class="success-message">
+                <h2>🎉 Game Created Successfully!</h2>
+                <p>Your game code is: <strong id="displayGameCode"></strong></p>
+            </div>
+            
+            <div class="join-url-container">
+                <label for="joinUrl">Share this link with players:</label>
+                <div class="join-url-group">
+                    <input type="text" id="joinUrl" class="join-url-input" readonly />
+                    <button id="copyBtn" class="copy-btn">Copy Link</button>
+                </div>
+            </div>
+            
+            <button id="goToGameBtn" class="go-to-game-btn">Go to Game Lobby</button>
+            <button id="createAnotherBtn" class="create-another-btn">Create Another Game</button>
+        </div>
+    </div>
+
     <script>
-        const socket = io();
+        document.getElementById('createGameForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const createBtn = document.getElementById('createBtn');
+            const errorDiv = document.getElementById('error');
+            const playerNames = document.getElementById('playerNames').value.trim();
+            const tasks = document.getElementById('tasks').value.trim();
+            const taskFile = document.getElementById('taskFile').files[0];
+            
+            // Hide any previous errors
+            errorDiv.style.display = 'none';
+            
+            if (!playerNames) {
+                showError('Please enter player names');
+                return;
+            }
+            
+            if (!tasks && !taskFile) {
+                showError('Please enter tasks or upload a task file');
+                return;
+            }
+            
+            if (tasks && taskFile) {
+                showError('Please use either the text area OR file upload, not both');
+                return;
+            }
+            
+            // Disable button and show loading
+            createBtn.disabled = true;
+            createBtn.textContent = 'Creating Game...';
+            
+            try {
+                // Create FormData for file upload support
+                const formData = new FormData();
+                formData.append('playerNames', playerNames);
+                
+                if (taskFile) {
+                    formData.append('taskFile', taskFile);
+                } else {
+                    formData.append('tasks', tasks);
+                }
+                
+                const response = await fetch('/api/create-game', {
+                    method: 'POST',
+                    body: formData // Don't set Content-Type header, let browser set it for FormData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create game');
+                }
+                
+                // Store creator token and game info in localStorage
+                localStorage.setItem(`creator_${data.gameCode}`, data.creatorToken);
+                
+                // Show success UI
+                showSuccess(data.gameCode, data.joinUrl);
+                
+            } catch (error) {
+                console.error('Error creating game:', error);
+                showError(error.message);
+                
+                // Re-enable button
+                createBtn.disabled = false;
+                createBtn.textContent = 'Create Game';
+            }
+        });
+        
+        // Copy link functionality
+        document.getElementById('copyBtn').addEventListener('click', async () => {
+            const joinUrlInput = document.getElementById('joinUrl');
+            const copyBtn = document.getElementById('copyBtn');
+            
+            try {
+                await navigator.clipboard.writeText(joinUrlInput.value);
+                
+                // Visual feedback
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                copyBtn.style.backgroundColor = '#28a745';
+                
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.style.backgroundColor = '';
+                }, 2000);
+                
+            } catch (err) {
+                // Fallback for older browsers
+                joinUrlInput.select();
+                joinUrlInput.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Link';
+                }, 2000);
+            }
+        });
+        
+        // Go to game lobby
+        document.getElementById('goToGameBtn').addEventListener('click', () => {
+            const gameCode = document.getElementById('displayGameCode').textContent;
+            window.location.href = `/game/${gameCode}`;
+        });
+        
+        // Create another game
+        document.getElementById('createAnotherBtn').addEventListener('click', () => {
+            // Reset form and show create form
+            document.getElementById('createGameForm').reset();
+            document.getElementById('createForm').style.display = 'block';
+            document.getElementById('successContainer').style.display = 'none';
+        });
+        
+        // Handle file selection
+        document.getElementById('taskFile').addEventListener('change', (e) => {
+            const taskTextarea = document.getElementById('tasks');
+            if (e.target.files.length > 0) {
+                taskTextarea.disabled = true;
+                taskTextarea.placeholder = 'File selected for tasks';
+                taskTextarea.value = ''; // Clear textarea when file is selected
+            } else {
+                taskTextarea.disabled = false;
+                taskTextarea.placeholder = 'Make them laugh\nGet them to say \'banana\'\nHigh five them\nMake them dance';
+            }
+        });
+        
+        // Handle textarea input
+        document.getElementById('tasks').addEventListener('input', (e) => {
+            const fileInput = document.getElementById('taskFile');
+            if (e.target.value.trim()) {
+                fileInput.disabled = true;
+            } else {
+                fileInput.disabled = false;
+            }
+        });
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function showSuccess(gameCode, joinUrl) {
+            // Hide create form
+            document.getElementById('createForm').style.display = 'none';
+            
+            // Show success container
+            document.getElementById('successContainer').style.display = 'block';
+            
+            // Populate success info
+            document.getElementById('displayGameCode').textContent = gameCode;
+            document.getElementById('joinUrl').value = joinUrl;
+        }
     </script>
 </body>
 </html>
