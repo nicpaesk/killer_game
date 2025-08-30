@@ -1,49 +1,30 @@
 {
-  // Basic project information
   "name": "killer-game",
   "version": "1.0.0",
   "description": "A real-time web game",
-  
-  // Use ES modules (modern JavaScript modules) instead of CommonJS
   "type": "module",
-  
-  // The main entry point of the application
   "main": "server.js",
-  
-  // Scripts that can be run with npm run <script-name>
   "scripts": {
-    "start": "node server.js", // Start the production server
-    "dev": "node server.js", // For now, same as start - we might change this later
-    "test": "node --test", // Run tests using Node's built-in test runner
-    "setup": "./setup.sh" // Run the setup script for new contributors
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test",
+    "setup": "./setup.sh"
   },
-  
-  // Keywords for npm search/discovery
   "keywords": [
     "game",
     "real-time",
     "socket.io"
   ],
-  
-  // Author information
   "author": "Alex Cardona",
-  
-  // License for the project
   "license": "ISC",
-  
-  // Production dependencies - needed for the application to run
   "dependencies": {
-    "express": "^5.1.0", // Web framework for handling HTTP requests
-    "socket.io": "^4.8.1" // Library for real-time bidirectional communication
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
   },
-  
-  // Development dependencies - only needed for development and testing
   "devDependencies": {
-    "socket.io-client": "^4.8.1" // Client library for testing Socket.IO connections
+    "socket.io-client": "^4.8.1"
   },
-  
-  // Specifies which Node.js versions this package works with
   "engines": {
-    "node": ">=16.0.0" // Requires Node.js version 16 or higher
+    "node": ">=16.0.0"
   }
 }
