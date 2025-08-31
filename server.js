@@ -45,6 +45,17 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS kill_history (
+    id TEXT PRIMARY KEY,
+    game_id TEXT,
+    killer_id TEXT,
+    victim_id TEXT,
+    task TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 // Add joined_at column if it doesn't exist (for migration)
 try {
   db.exec(`ALTER TABLE players ADD COLUMN joined_at DATETIME`);
@@ -196,6 +207,56 @@ app.post('/api/create-game', (req, res) => {
 
 app.get('/game/:gameCode', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'game.html'));
+});
+
+app.get('/api/game-summary', (req, res) => {
+  try {
+    const { gameCode } = req.query;
+    if (!gameCode) return res.status(400).json({ error: 'Missing game code' });
+
+    const game = getGameById.get(gameCode);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    // Winner
+    const alivePlayers = listAlivePlayers.all(gameCode);
+    const winner = alivePlayers.length === 1 ? alivePlayers[0] : null;
+
+    // Kill history with player names
+    const historyRows = db.prepare(`
+      SELECT kh.*, k.name AS killer_name, v.name AS victim_name, k.session_token AS killer_session_token
+      FROM kill_history kh
+      LEFT JOIN players k ON kh.killer_id = k.id
+      LEFT JOIN players v ON kh.victim_id = v.id
+      WHERE kh.game_id = ?
+      ORDER BY kh.timestamp ASC
+    `).all(gameCode);
+
+    // Kill count per player
+    const killCount = {};
+    const players = db.prepare(`SELECT name FROM players WHERE game_id = ?`).all(gameCode);
+    players.forEach(p => killCount[p.name] = 0);
+    historyRows.forEach(h => {
+      if (h.killer_name) killCount[h.killer_name]++;
+    });
+
+    const sessionToken = req.query.sessionToken || null;
+    let currentPlayer = null;
+    if (sessionToken) {
+      currentPlayer = db.prepare(`SELECT name FROM players WHERE session_token = ? AND game_id = ?`)
+                        .get(sessionToken, gameCode);
+    }
+
+    res.json({
+      winner_name: winner ? winner.name : null,
+      kill_history: historyRows,
+      kill_count: killCount,
+      current_player_name: currentPlayer ? currentPlayer.name : null
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get game summary' });
+  }
 });
 
 // ----------------------------
@@ -553,6 +614,13 @@ io.on('connection', (socket) => {
         setPlayerTargetOnly.run(newTargetForKiller, killer.id);
         // Transfer task to killer
         setPlayerTaskOnly.run(target.task || null, killer.id);
+
+        // --- NEW: insert into kill history ---
+        const insertKill = db.prepare(`
+          INSERT INTO kill_history (id, game_id, killer_id, victim_id, task)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        insertKill.run(uuidv4(), target.game_id, killer.id, target.id, target.task || null);
       });
       tx();
 
@@ -596,6 +664,9 @@ io.on('connection', (socket) => {
           winner_id: winner.id,
           winner_name: winner.name
         });
+
+        // --- NEW: instruct clients to navigate to victory page ---
+        io.to(target.game_id).emit('navigate-victory', { gameCode: target.game_id });
       }
 
     } catch (error) {

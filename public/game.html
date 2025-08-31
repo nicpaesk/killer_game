@@ -450,6 +450,10 @@
     toast(`Game over — winner: ${winner_name}`);
   });
 
+  socket.on('navigate-victory', ({ gameCode }) => {
+    window.location.href = `/victory.html?gameCode=${gameCode}`;
+  });
+
   function fillGraveyard(players){
     graveList.innerHTML = '';
     (players || []).forEach(p => {

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Killer — Victory</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width:900px; margin:20px auto; background:#f5f5f7; color:#111; }
+  .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.04) }
+  h1 { text-align:center; }
+  table { width:100%; border-collapse:collapse; margin-top:20px; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; }
+  th { background:#f3f6f9; }
+  .highlight { background-color: #dff6dd; font-weight: bold; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="winnerName">Winner: —</h1>
+
+    <h2>Kill History</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Killer</th>
+          <th>Victim</th>
+          <th>Task</th>
+        </tr>
+      </thead>
+      <tbody id="historyTable"></tbody>
+    </table>
+
+    <h2>Kill Count</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Kills</th>
+        </tr>
+      </thead>
+      <tbody id="killCountTable"></tbody>
+    </table>
+  </div>
+<script>
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const gameCode = params.get('gameCode');
+  if (!gameCode) return;
+
+  // Get session token from localStorage using the per-game key
+  const sessionKey = `session_${gameCode}`;
+  const sessionToken = localStorage.getItem(sessionKey);
+
+  const res = await fetch(`/api/game-summary?gameCode=${gameCode}&sessionToken=${sessionToken}`);
+  const data = await res.json();
+
+  document.getElementById('winnerName').textContent = `Winner: ${data.winner_name || '—'}`;
+
+  const historyTable = document.getElementById('historyTable');
+  data.kill_history.forEach(k => {
+    const tr = document.createElement('tr');
+
+    // Highlight if the current player was the killer
+    const isOwnKill = (k.killer_session_token === sessionToken);
+    if (isOwnKill) tr.classList.add('highlight');
+
+    tr.innerHTML = `
+      <td>${new Date(k.timestamp).toLocaleString()}</td>
+      <td>${k.killer_name}</td>
+      <td>${k.victim_name}</td>
+      <td>${k.task || ''}</td>
+    `;
+    historyTable.appendChild(tr);
+  });
+
+  const killCountTable = document.getElementById('killCountTable');
+  Object.entries(data.kill_count).forEach(([player, count]) => {
+    const tr = document.createElement('tr');
+
+    // Highlight if this is the current player's name
+    if (player === data.current_player_name) tr.classList.add('highlight');
+
+    tr.innerHTML = `<td>${player}</td><td>${count}</td>`;
+    killCountTable.appendChild(tr);
+  });
+})();
+</script>
+
+</body>
+</html>
