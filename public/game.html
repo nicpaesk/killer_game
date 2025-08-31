@@ -1,468 +1,476 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Killer Game - Lobby</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .game-code {
-            text-align: center;
-            font-size: 24px;
-            font-weight: bold;
-            color: #007bff;
-            margin-bottom: 30px;
-            padding: 10px;
-            background-color: #e9ecef;
-            border-radius: 4px;
-        }
-        .players-container {
-            margin-bottom: 30px;
-        }
-        .player-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background-color: #f8f9fa;
-            transition: all 0.2s ease;
-        }
-        .player-info {
-            display: flex;
-            align-items: center;
-        }
-        .player-name {
-            font-size: 16px;
-            font-weight: bold;
-            margin-right: 15px;
-        }
-        .player-status {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .status-not-joined {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .status-alive {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .player-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .select-btn, .claim-btn, .cancel-btn, .confirm-btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.2s;
-        }
-        .select-btn {
-            background-color: #6c757d;
-            color: white;
-        }
-        .select-btn:hover {
-            background-color: #5a6268;
-        }
-        .select-btn.selected {
-            background-color: #007bff;
-            color: white;
-        }
-        .confirm-btn {
-            background-color: #28a745;
-            color: white;
-        }
-        .confirm-btn:hover {
-            background-color: #218838;
-        }
-        .cancel-btn {
-            background-color: #dc3545;
-            color: white;
-        }
-        .cancel-btn:hover {
-            background-color: #c82333;
-        }
-        .start-game-container {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #eee;
-        }
-        .start-btn {
-            padding: 15px 30px;
-            background-color: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .start-btn:hover:not(:disabled) {
-            background-color: #c82333;
-        }
-        .start-btn:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-        .error {
-            color: #dc3545;
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            border-radius: 4px;
-            display: none;
-        }
-        .connection-status {
-            text-align: center;
-            margin-bottom: 20px;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        .connected {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .my-player {
-            background-color: #e3f2fd;
-            border-color: #2196f3;
-        }
-        .tentatively-selected {
-            background-color: #fff3cd;
-            border-color: #ffc107;
-            border-width: 2px;
-        }
-        .selection-phase-container {
-            background-color: #e9ecef;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        .selection-phase-container.active {
-            display: block;
-        }
-        .phase-title {
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #495057;
-        }
-        .selected-player-name {
-            color: #007bff;
-            font-weight: bold;
-        }
-        .confirm-identity-container {
-            text-align: center;
-            margin-top: 15px;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <title>Killer — Lobby & Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; max-width:900px; margin:20px auto; background:#f5f5f7; color:#111 }
+    .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.04) }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+    h1 { margin:0; font-size:20px }
+    .game-code { font-size:14px; color:#0b66c3 }
+    .you-label { font-size:14px; color:#333; font-weight:700 }
+    .connection-status { text-align:center; margin-bottom:12px; padding:8px; border-radius:6px }
+    .connected { background:#e6ffed; color:#0b662b; border:1px solid #cfead1 }
+    .disconnected { background:#fff0f0; color:#7a1f1f; border:1px solid #f2c2c2 }
+    .players-container { margin-bottom:18px }
+    .player-item { display:flex; justify-content:space-between; align-items:center; padding:12px; border-radius:6px; margin-bottom:8px; border:1px solid #eee; background:#fbfbfd }
+    .player-name { font-weight:700 }
+    .player-status { padding:6px 10px; border-radius:6px; font-size:13px }
+    .status-not-joined { background:#fff3f3; color:#7a1f1f }
+    .status-alive { background:#e8f8ee; color:#0b662b }
+    .controls { text-align:center; margin-top:14px }
+    .btn { padding:10px 16px; border-radius:8px; border:0; cursor:pointer; font-weight:700 }
+    .btn.primary { background:#2563eb; color:#fff }
+    .btn.ghost { background:transparent; border:1px solid #ddd }
+    .btn.danger { background:#ef4444; color:#fff }
+    .smallmuted { color:#666; font-size:13px }
+    .hidden { display:none !important }
+    .selection-phase { background:#f3f6f9; padding:12px; border-radius:8px; margin-bottom:14px }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding:12px; z-index:1000 }
+    .modal-backdrop.open { display:flex }
+    .modal { background:#fff; padding:18px; border-radius:10px; width:100%; max-width:560px; box-shadow:0 10px 30px rgba(0,0,0,.2) }
+    .field { margin:10px 0 }
+    input[type="text"] { width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; box-sizing:border-box }
+    ul.list { list-style:none; padding:0; margin:0 }
+    li.list-item { padding:10px 6px; border-bottom:1px dashed #eee; display:flex; justify-content:space-between; align-items:center }
+    #alert { margin-top:12px; padding:10px; border-radius:8px; background:#fffbe6; border:1px solid #ffecb5; color:#6b4a00 }
+    .pill { padding:6px 10px; border-radius:999px; border:1px solid #ddd; font-size:13px }
+    .select-btn.selected { background:#2563eb; color:#fff }
+    button:disabled { opacity: 0.5; cursor: not-allowed;}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Game Lobby</h1>
-        <div id="gameCode" class="game-code">Loading...</div>
-        
-        <div id="connectionStatus" class="connection-status disconnected">
-            Connecting...
+  <div class="container">
+    <header>
+      <div>
+        <h1>Killer</h1>
+        <div id="gameCode" class="game-code">Loading game…</div>
+      </div>
+      <div id="youNameContainer" class="you-label">You: <span id="youName">—</span></div>
+    </header>
+
+    <div id="connectionStatus" class="connection-status disconnected">Connecting...</div>
+
+    <!-- SELECTION / LOBBY -->
+    <div id="lobbySection">
+      <div id="selectionPhase" class="selection-phase">
+        <div class="smallmuted">Select your identity</div>
+        <p>You have tentatively selected: <strong id="selectedPlayerName">None</strong></p>
+        <div style="text-align:center; margin-top:8px;">
+          <button id="confirmIdentityBtn" class="btn primary" disabled>Confirm My Identity</button>
         </div>
-        
-        <!-- Selection Phase UI -->
-        <div id="selectionPhaseContainer" class="selection-phase-container">
-            <div class="phase-title">Select Your Identity</div>
-            <p>You have tentatively selected: <span id="selectedPlayerName" class="selected-player-name">None</span></p>
-            <div class="confirm-identity-container">
-                <button id="confirmIdentityBtn" class="confirm-btn" disabled>Confirm My Identity</button>
-            </div>
-        </div>
-        
-        <div class="players-container">
-            <h2>Players:</h2>
-            <div id="playersList">
-                Loading players...
-            </div>
-        </div>
-        
-        <div id="startGameContainer" class="start-game-container" style="display: none;">
-            <button id="startGameBtn" class="start-btn" disabled>Start Game</button>
-            <p><small>All players must join before the game can start</small></p>
-        </div>
-        
-        <div id="error" class="error"></div>
+      </div>
+
+      <div class="players-container">
+        <h3>Players</h3>
+        <div id="playersList">Loading players…</div>
+      </div>
+
+      <!-- NOTE: inline style display:none like your original so start visibility uses style.display toggles -->
+      <div id="startGameContainer" style="display:none; text-align:center; margin-top:8px">
+        <button id="startGameBtn" class="btn danger" disabled>Start Game</button>
+        <div class="smallmuted" style="margin-top:8px">All players must join before the creator can start</div>
+      </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        // Extract game code from URL
-        const gameCode = window.location.pathname.split('/').pop();
-        const socket = io();
-        let myPlayerName = null;
-        let isCreator = false;
-        let tentativelySelectedPlayer = null;
-        let mySessionToken = null;
-        
-        // Check if this user is the creator
-        const creatorToken = localStorage.getItem(`creator_${gameCode}`);
-        if (creatorToken) {
-            isCreator = true;
-        }
-        
-        // Get my session token (if I've already claimed an identity)
-        mySessionToken = localStorage.getItem(`session_${gameCode}`);
-        
-        // Update game code display
-        document.getElementById('gameCode').textContent = `Game Code: ${gameCode}`;
-        
-        // Socket connection events
-        socket.on('connect', () => {
-            console.log('Connected to server');
-            updateConnectionStatus(true);
-            socket.emit('join-game', gameCode);
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            updateConnectionStatus(false);
-        });
-        
-        socket.on('error', (error) => {
-            console.error('Socket error:', error);
-            showError(error.message);
-        });
-        
-        // Game-specific events
-        socket.on('player-list-update', (players) => {
-            console.log('Player list updated:', players);
-            renderPlayerList(players);
-            updateStartButton(players);
-            updateSelectionPhaseUI(players);
-        });
-        
-        socket.on('identity-confirmed', (data) => {
-            console.log('Identity confirmed:', data);
-            myPlayerName = data.playerName;
-            mySessionToken = data.sessionToken;
-            tentativelySelectedPlayer = null;
-            
-            // Store session token
-            localStorage.setItem(`session_${gameCode}`, data.sessionToken);
-            localStorage.setItem(`player_name_${gameCode}`, data.playerName);
-            
-            // Hide selection phase UI
-            document.getElementById('selectionPhaseContainer').classList.remove('active');
-        });
-        
-        socket.on('identity-canceled', (data) => {
-            console.log('Identity canceled:', data);
-            myPlayerName = null;
-            mySessionToken = null;
-            tentativelySelectedPlayer = null;
-            
-            // Clear stored data
-            localStorage.removeItem(`session_${gameCode}`);
-            localStorage.removeItem(`player_name_${gameCode}`);
-            
-            // Reset selection phase UI
-            updateSelectionPhaseDisplay();
-        });
-        
-        // Confirm identity button handler
-        document.getElementById('confirmIdentityBtn').addEventListener('click', () => {
-            if (tentativelySelectedPlayer) {
-                console.log('Confirming identity:', tentativelySelectedPlayer);
-                socket.emit('claim-identity', {
-                    gameCode: gameCode,
-                    playerName: tentativelySelectedPlayer
-                });
-            }
-        });
-        
-        function updateConnectionStatus(connected) {
-            const statusDiv = document.getElementById('connectionStatus');
-            if (connected) {
-                statusDiv.textContent = 'Connected to game';
-                statusDiv.className = 'connection-status connected';
-            } else {
-                statusDiv.textContent = 'Disconnected - trying to reconnect...';
-                statusDiv.className = 'connection-status disconnected';
-            }
-        }
-        
-        function renderPlayerList(players) {
-            const playersList = document.getElementById('playersList');
-            
-            if (players.length === 0) {
-                playersList.innerHTML = '<p>No players found for this game.</p>';
-                return;
-            }
-            
-            playersList.innerHTML = players.map(player => {
-                const isMe = player.session_token === mySessionToken;
-                const canSelect = player.status === 'not-joined';
-                const isTentativelySelected = tentativelySelectedPlayer === player.name;
-                
-                let playerItemClass = 'player-item';
-                if (isMe) {
-                    playerItemClass += ' my-player';
-                } else if (isTentativelySelected) {
-                    playerItemClass += ' tentatively-selected';
-                }
-                
-                return `
-                    <div class="${playerItemClass}">
-                        <div class="player-info">
-                            <span class="player-name">${player.name} ${isMe ? '(You)' : ''}</span>
-                            <span class="player-status ${player.status === 'alive' ? 'status-alive' : 'status-not-joined'}">
-                                ${player.status === 'alive' ? 'Joined' : 'Not Joined'}
-                            </span>
-                        </div>
-                        <div class="player-actions">
-                            ${canSelect && !mySessionToken ? `
-                                <button class="select-btn ${isTentativelySelected ? 'selected' : ''}" 
-                                        onclick="selectPlayer('${player.name}')">
-                                    ${isTentativelySelected ? 'Selected' : 'Select'}
-                                </button>
-                            ` : ''}
-                            ${isMe ? `
-                                <button class="cancel-btn" onclick="cancelIdentity()">
-                                    Cancel Registration
-                                </button>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        function selectPlayer(playerName) {
-            console.log('Tentatively selecting player:', playerName);
-            
-            // Update tentative selection
-            if (tentativelySelectedPlayer === playerName) {
-                // Deselect if clicking the same player
-                tentativelySelectedPlayer = null;
-            } else {
-                tentativelySelectedPlayer = playerName;
-            }
-            
-            // Update UI immediately (re-render player list to show selection)
-            socket.emit('join-game', gameCode); // Refresh player list to update UI
-            
-            updateSelectionPhaseDisplay();
-        }
-        
-        function cancelIdentity() {
-            if (mySessionToken) {
-                console.log('Canceling identity');
-                socket.emit('cancel-identity', {
-                    gameCode: gameCode,
-                    sessionToken: mySessionToken
-                });
-            }
-        }
-        
-        function updateSelectionPhaseUI(players) {
-            const container = document.getElementById('selectionPhaseContainer');
-            
-            // Show selection phase UI if user hasn't claimed an identity yet
-            if (!mySessionToken) {
-                container.classList.add('active');
-            } else {
-                container.classList.remove('active');
-            }
-            
-            updateSelectionPhaseDisplay();
-        }
-        
-        function updateSelectionPhaseDisplay() {
-            const selectedNameSpan = document.getElementById('selectedPlayerName');
-            const confirmBtn = document.getElementById('confirmIdentityBtn');
-            
-            if (tentativelySelectedPlayer) {
-                selectedNameSpan.textContent = tentativelySelectedPlayer;
-                confirmBtn.disabled = false;
-            } else {
-                selectedNameSpan.textContent = 'None';
-                confirmBtn.disabled = true;
-            }
-        }
-        
-        function updateStartButton(players) {
-            if (!isCreator) {
-                return; // Don't show start button if not creator
-            }
-            
-            const container = document.getElementById('startGameContainer');
-            const startBtn = document.getElementById('startGameBtn');
-            
-            container.style.display = 'block';
-            
-            // Check if all players have joined
-            const allJoined = players.length > 0 && players.every(player => player.status === 'alive');
-            
-            startBtn.disabled = !allJoined;
-            
-            if (allJoined) {
-                startBtn.textContent = 'Start Game';
-            } else {
-                const joinedCount = players.filter(p => p.status === 'alive').length;
-                startBtn.textContent = `Waiting for players (${joinedCount}/${players.length})`;
-            }
-        }
-        
-        // Start game button handler
-        document.getElementById('startGameBtn').addEventListener('click', () => {
-            // This will be implemented in later sprints
-            alert('Game start functionality will be implemented in the next sprint!');
-        });
-        
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            
-            // Hide error after 5 seconds
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
-        }
-        
-        // Load saved player name if exists
-        const savedPlayerName = localStorage.getItem(`player_name_${gameCode}`);
-        if (savedPlayerName) {
-            myPlayerName = savedPlayerName;
-        }
-    </script>
+    <!-- GAMEPLAY (alive) -->
+    <div id="viewAlive" class="hidden">
+      <h3>Your Mission</h3>
+      <p class="smallmuted">Target: <strong id="targetName">—</strong></p>
+      <p class="smallmuted">Task: <span id="taskText">—</span></p>
+      <div style="margin-top:12px">
+        <button id="btnEliminate" class="btn danger">ELIMINATE TARGET</button>
+        <span id="cooldownNote" class="smallmuted" style="margin-left:10px"></span>
+      </div>
+    </div>
+
+    <!-- GRAVEYARD (dead) -->
+    <div id="viewDead" class="hidden">
+      <h3>You have been eliminated ☠</h3>
+      <p class="smallmuted">You are a spectator. Roster below updates in real time.</p>
+      <ul id="graveList" class="list" style="margin-top:12px"></ul>
+    </div>
+
+    <div id="alert" class="hidden"></div>
+  </div>
+
+  <!-- Confirm eliminate modal (typed-confirm) -->
+  <div id="confirmModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Confirm Elimination</h3>
+      <p id="confirmSummary" class="smallmuted"></p>
+      <div class="field">
+        <div class="smallmuted">Type the target's exact name to confirm (case-insensitive):</div>
+        <input id="confirmInput" type="text" placeholder="Type target name" autocomplete="off" />
+        <div id="confirmError" class="smallmuted" style="color:red; margin-top:6px; display:none;"></div>
+      </div>
+      <div style="text-align:right; margin-top:8px">
+        <button id="confirmCancel" class="btn ghost">Cancel</button>
+        <button id="confirmYes" class="btn danger" disabled>Yes — Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kill challenge modal (target) -->
+  <div id="challengeModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Elimination Challenge</h3>
+      <p id="challengeText" class="smallmuted"></p>
+      <div style="text-align:right; margin-top:12px">
+        <button id="challengeDeny" class="btn ghost">Deny</button>
+        <button id="challengeConfirm" class="btn primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const socket = io();
+
+  // Get game code
+  function getGameCode() {
+    const fromQuery = new URLSearchParams(window.location.search).get('gameCode') || new URLSearchParams(window.location.search).get('game');
+    if (fromQuery) return fromQuery;
+    const pathLast = window.location.pathname.split('/').filter(Boolean).pop();
+    return pathLast;
+  }
+  const gameCode = getGameCode();
+  document.getElementById('gameCode').textContent = gameCode ? `Game: ${gameCode}` : 'Game';
+
+  // Storage keys
+  const creatorKey = `creator_${gameCode}`;
+  const sessionKey = `session_${gameCode}`;
+  const playerNameKey = `player_name_${gameCode}`;
+
+  // Elements
+  const connectionStatus = document.getElementById('connectionStatus');
+  const playersListEl = document.getElementById('playersList');
+  const selectedNameEl = document.getElementById('selectedPlayerName');
+  const confirmIdentityBtn = document.getElementById('confirmIdentityBtn');
+  const startGameContainer = document.getElementById('startGameContainer');
+  const startGameBtn = document.getElementById('startGameBtn');
+
+  const selectionPhase = document.getElementById('selectionPhase');
+
+  const viewAlive = document.getElementById('viewAlive');
+  const viewDead = document.getElementById('viewDead');
+  const targetNameEl = document.getElementById('targetName');
+  const taskTextEl = document.getElementById('taskText');
+  const btnEliminate = document.getElementById('btnEliminate');
+  const cooldownNote = document.getElementById('cooldownNote');
+
+  const confirmModal = document.getElementById('confirmModal');
+  const confirmSummary = document.getElementById('confirmSummary');
+  const confirmInput = document.getElementById('confirmInput');
+  const confirmCancel = document.getElementById('confirmCancel');
+  const confirmYes = document.getElementById('confirmYes');
+
+  const challengeModal = document.getElementById('challengeModal');
+  const challengeText = document.getElementById('challengeText');
+  const challengeDeny = document.getElementById('challengeDeny');
+  const challengeConfirm = document.getElementById('challengeConfirm');
+
+  const graveList = document.getElementById('graveList');
+  const alertBox = document.getElementById('alert');
+  const youNameSpan = document.getElementById('youName');
+
+  // State
+  let tentativelySelected = null;
+  let mySession = localStorage.getItem(sessionKey) || null;
+  let myName = localStorage.getItem(playerNameKey) || null;
+  // IMPORTANT: detect creator via the exact key your create UI sets (reuse original pattern)
+  let isCreator = !!localStorage.getItem(creatorKey);
+  let role = 'lobby'; // 'lobby' | 'alive' | 'dead'
+  let currentTarget = null;
+  let currentTask = null;
+  let pendingKiller = null;
+  let eliminateCooldown = false;
+
+  function show(el){ el.classList.remove('hidden'); }
+  function hide(el){ el.classList.add('hidden'); }
+  function toast(msg){
+    alertBox.textContent = msg;
+    show(alertBox);
+    setTimeout(()=> hide(alertBox), 2800);
+  }
+
+  // initialize displayed name from localStorage (if present)
+  function updateDisplayedName(name) {
+    myName = name || null;
+    if (myName) {
+      youNameSpan.textContent = myName;
+    } else {
+      youNameSpan.textContent = '—';
+    }
+  }
+  updateDisplayedName(localStorage.getItem(playerNameKey));
+
+  socket.on('connect', () => {
+    connectionStatus.textContent = 'Connected to game';
+    connectionStatus.className = 'connection-status connected';
+    socket.emit('join-game', gameCode);
+    if (mySession) socket.emit('identify', { session_token: mySession, game_id: gameCode });
+  });
+  socket.on('disconnect', () => {
+    connectionStatus.textContent = 'Disconnected - trying to reconnect...';
+    connectionStatus.className = 'connection-status disconnected';
+  });
+
+  // Render the player list client-side using server data; include select/cancel buttons
+  function renderPlayerList(players) {
+    if (!players || players.length === 0) {
+      playersListEl.innerHTML = '<p>No players found.</p>';
+      return;
+    }
+
+    const html = players.map(p => {
+      const isMe = p.session_token && (p.session_token === mySession);
+      const canSelect = p.status === 'not-joined' && !mySession;
+      const isTent = tentativelySelected === p.name;
+      const statusClass = p.status === 'alive' ? 'status-alive' : 'status-not-joined';
+      const statusText = p.status === 'alive' ? 'Joined' : 'Not Joined';
+      const selectBtn = canSelect ? `<button class="btn ghost select-btn ${isTent ? 'selected' : ''}" data-name="${escapeHtml(p.name)}">${isTent? 'Selected' : 'Select'}</button>` : '';
+      const myCancelBtn = isMe ? `<button class="btn ghost cancel-btn" data-name="${escapeHtml(p.name)}">Cancel</button>` : '';
+      return `
+        <div class="player-item">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div class="player-name">${escapeHtml(p.name)} ${isMe ? '(You)' : ''}</div>
+            <div class="player-status ${statusClass} pill">${statusText}</div>
+          </div>
+          <div>
+            ${selectBtn} ${myCancelBtn}
+          </div>
+        </div>
+      `;
+    }).join('');
+    playersListEl.innerHTML = html;
+
+    // Update selection UI
+    selectedNameEl.textContent = tentativelySelected || 'None';
+    confirmIdentityBtn.disabled = !tentativelySelected;
+  }
+
+  // Simple HTML escaper for safety when rendering names
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
+  }
+
+  // Delegated click handler for select/cancel buttons
+  playersListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.classList.contains('select-btn')) {
+      const name = btn.dataset.name;
+      if (!name) return;
+      if (tentativelySelected === name) tentativelySelected = null; else tentativelySelected = name;
+      socket.emit('join-game', gameCode);
+      selectedNameEl.textContent = tentativelySelected || 'None';
+      confirmIdentityBtn.disabled = !tentativelySelected;
+    } else if (btn.classList.contains('cancel-btn')) {
+      if (!mySession) return;
+      socket.emit('cancel-identity', { gameCode, sessionToken: mySession });
+    }
+  });
+
+  // identity confirm
+  confirmIdentityBtn.addEventListener('click', () => {
+    if (!tentativelySelected) return;
+    socket.emit('claim-identity', { gameCode, playerName: tentativelySelected });
+  });
+
+  // handle server identity responses
+  socket.on('identity-confirmed', (data) => {
+    mySession = data.sessionToken;
+    myName = data.playerName;
+    localStorage.setItem(sessionKey, mySession);
+    localStorage.setItem(playerNameKey, myName);
+    updateDisplayedName(myName);               // <-- update visible name
+    hide(selectionPhase);
+    toast(`You are now ${myName}`);
+    socket.emit('join-game', gameCode);
+  });
+
+  socket.on('identity-canceled', (data) => {
+    mySession = null;
+    myName = null;
+    localStorage.removeItem(sessionKey);
+    localStorage.removeItem(playerNameKey);
+    updateDisplayedName(null);                 // <-- clear visible name
+    tentativelySelected = null;
+    selectedNameEl.textContent = 'None';
+    confirmIdentityBtn.disabled = true;
+    show(selectionPhase);
+    socket.emit('join-game', gameCode);
+  });
+
+  // When server sends player-list-update: render it
+  socket.on('player-list-update', (players) => {
+    renderPlayerList(players || []);
+    // creator logic for start button — use inline style toggles like original code
+    if (isCreator) {
+      startGameContainer.style.display = 'block';
+      const allJoined = players.length > 0 && players.every(p => p.status === 'alive');
+      startGameBtn.disabled = !allJoined;
+      startGameBtn.textContent = allJoined ? 'Start Game' : `Waiting (${players.filter(p=>p.status==='alive').length}/${players.length})`;
+    } else {
+      startGameContainer.style.display = 'none';
+    }
+    // If we are dead, show roster in grave
+    if (role === 'dead') fillGraveyard(players || []);
+  });
+
+  // creator start
+  if (isCreator) startGameContainer.style.display = 'block';
+  startGameBtn.addEventListener('click', () => {
+    const creatorToken = localStorage.getItem(creatorKey);
+    if (!creatorToken) { toast('Creator token missing'); return; }
+    socket.emit('start-game', { gameCode, creatorToken });
+  });
+
+  // your assignment private DM
+  socket.on('your-assignment', ({ target, task }) => {
+    role = 'alive';
+    currentTarget = target;
+    currentTask = task;
+    targetNameEl.textContent = currentTarget ? currentTarget.name : '—';
+    taskTextEl.textContent = currentTask || '—';
+    document.getElementById('lobbySection').style.display = 'none';
+    show(viewAlive);
+    hide(viewDead);
+  });
+
+  socket.on('game-started', () => {
+    toast('Game started!');
+    socket.emit('join-game', gameCode); // cause lobby update + server DMs
+  });
+
+  // eliminate flow - typed confirm modal
+  btnEliminate.addEventListener('click', () => {
+    if (role !== 'alive') return;
+    if (eliminateCooldown) return;
+    if (!currentTarget || !currentTask) { toast('No assigned target or task'); return; }
+    confirmSummary.textContent = `You are about to claim the elimination of "${currentTarget.name}" by doing: "${currentTask}". This will send a challenge to them for verification.`;
+    confirmInput.value = '';
+    confirmYes.disabled = true;
+    confirmModal.classList.add('open');
+    confirmInput.focus();
+  });
+
+    confirmInput.addEventListener('input', () => {
+    const typed = confirmInput.value.trim().toLowerCase();
+    const targetName = (currentTarget && currentTarget.name) ? currentTarget.name.trim().toLowerCase() : '';
+    
+    if (typed === '') {
+    confirmYes.disabled = true;
+    confirmError.style.display = 'none';
+    } else if (typed !== targetName) {
+    confirmYes.disabled = true;
+    confirmError.textContent = 'Target name does not match!';
+    confirmError.style.display = 'block';
+    } else {
+    confirmYes.disabled = false;
+    confirmError.style.display = 'none';
+    }
+    });
+
+    confirmInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmYes.disabled) {
+        confirmYes.click();
+    }
+    });
+
+  confirmCancel.addEventListener('click', () => { confirmModal.classList.remove('open'); });
+
+  confirmYes.addEventListener('click', () => {
+    confirmModal.classList.remove('open');
+    eliminateCooldown = true;
+    btnEliminate.disabled = true;
+    cooldownNote.textContent = 'Cooldown...';
+    setTimeout(()=> { eliminateCooldown = false; btnEliminate.disabled = false; cooldownNote.textContent=''; }, 1000);
+
+    const sessionToken = mySession;
+    socket.emit('claim-kill', { sessionToken, session_token: sessionToken, gameCode });
+    toast('Claim sent — waiting for target response');
+  });
+
+  // target challenge modal
+  socket.on('kill-challenge', ({ killer_id, killer_name, task }) => {
+    pendingKiller = killer_id;
+    challengeText.textContent = `${killer_name} claims they eliminated you by making you do: "${task}". Do you confirm?`;
+    challengeModal.classList.add('open');
+  });
+
+  challengeDeny.addEventListener('click', () => {
+    challengeModal.classList.remove('open');
+    if (!pendingKiller) return;
+    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'deny' });
+    pendingKiller = null;
+    toast('You denied the claim');
+  });
+
+  challengeConfirm.addEventListener('click', () => {
+    challengeModal.classList.remove('open');
+    if (!pendingKiller) return;
+    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'confirm' });
+    pendingKiller = null;
+    toast('You confirmed the claim');
+  });
+
+  socket.on('kill-denied', () => { toast('Your kill was denied.'); });
+
+  socket.on('player-eliminated', ({ name, id }) => {
+    if (role === 'dead') {
+     toast(`${name} eliminated`);
+    socket.emit('join-game', gameCode);
+  }
+  });
+
+  socket.on('you-eliminated', () => {
+    role = 'dead';
+    hide(viewAlive);
+    show(viewDead);
+    socket.emit('join-game', gameCode);
+  });
+
+  socket.on('new-target', ({ target, task }) => {
+    currentTarget = target || null;
+    currentTask = task || null;
+    if (role === 'alive') {
+      targetNameEl.textContent = currentTarget ? currentTarget.name : '—';
+      taskTextEl.textContent = currentTask || '—';
+    }
+    toast('New target received');
+  });
+
+  socket.on('game-over', ({ winner_id, winner_name }) => {
+    toast(`Game over — winner: ${winner_name}`);
+  });
+
+  function fillGraveyard(players){
+    graveList.innerHTML = '';
+    (players || []).forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'list-item';
+      li.innerHTML = `<div>${escapeHtml(p.name)}</div><div class="pill">${p.status === 'alive' ? '♥ alive' : '☠ eliminated'}</div>`;
+      graveList.appendChild(li);
+    });
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
+  }
+
+  // initial UI
+  if (mySession) hide(selectionPhase);
+  else { show(selectionPhase); confirmIdentityBtn.disabled = true; }
+  // Ensure startGameContainer visible if creator (initial)
+  if (isCreator) startGameContainer.style.display = 'block';
+})();
+</script>
 </body>
 </html>
