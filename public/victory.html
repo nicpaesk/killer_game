@@ -74,13 +74,10 @@
   });
 
   const killCountTable = document.getElementById('killCountTable');
-  Object.entries(data.kill_count).forEach(([player, count]) => {
+  data.kill_count.forEach(({ name, count }) => {
     const tr = document.createElement('tr');
-
-    // Highlight if this is the current player's name
-    if (player === data.current_player_name) tr.classList.add('highlight');
-
-    tr.innerHTML = `<td>${player}</td><td>${count}</td>`;
+    if (name === data.current_player_name) tr.classList.add('highlight');
+    tr.innerHTML = `<td>${name}</td><td>${count}</td>`;
     killCountTable.appendChild(tr);
   });
 })();

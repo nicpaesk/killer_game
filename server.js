@@ -232,12 +232,15 @@ app.get('/api/game-summary', (req, res) => {
     `).all(gameCode);
 
     // Kill count per player
-    const killCount = {};
+    const killCountArr = [];
     const players = db.prepare(`SELECT name FROM players WHERE game_id = ?`).all(gameCode);
-    players.forEach(p => killCount[p.name] = 0);
-    historyRows.forEach(h => {
-      if (h.killer_name) killCount[h.killer_name]++;
+    players.forEach(p => {
+      // Count kills for this player
+      const count = historyRows.filter(h => h.killer_name === p.name).length;
+      killCountArr.push({ name: p.name, count });
     });
+    // Sort descending by count, then by name
+    killCountArr.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
     const sessionToken = req.query.sessionToken || null;
     let currentPlayer = null;
@@ -249,7 +252,7 @@ app.get('/api/game-summary', (req, res) => {
     res.json({
       winner_name: winner ? winner.name : null,
       kill_history: historyRows,
-      kill_count: killCount,
+      kill_count: killCountArr,
       current_player_name: currentPlayer ? currentPlayer.name : null
     });
 
