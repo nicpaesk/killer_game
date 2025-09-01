@@ -163,8 +163,8 @@ app.post('/api/create-game', (req, res) => {
     const playersArray = playerNames.split('\n').map(s => s.trim()).filter(name => name !== '');
     const tasksArray = tasks.split('\n').map(s => s.trim()).filter(t => t !== '');
 
-    if (playersArray.length === 0 || tasksArray.length === 0) {
-      return res.status(400).json({ error: 'At least one player and one task are required' });
+    if (playersArray.length <= 1 || tasksArray.length === 0) {
+      return res.status(400).json({ error: 'At least two players and one task are required' });
     }
 
     // Generate unique game code
