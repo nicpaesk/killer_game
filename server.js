@@ -240,7 +240,10 @@ app.get('/api/game-summary', (req, res) => {
       killCountArr.push({ name: p.name, count });
     });
     // Sort descending by count, then by name
-    killCountArr.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    killCountArr.sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name);
+    });
 
     const sessionToken = req.query.sessionToken || null;
     let currentPlayer = null;
