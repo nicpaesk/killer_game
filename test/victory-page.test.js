@@ -1,5 +1,4 @@
-// test/victory-page.test.js
-import { test, describe, beforeEach, afterEach } from 'node:test';
+import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { JSDOM } from 'jsdom';
 import fs from 'fs';
@@ -50,8 +49,8 @@ describe('Victory Page', () => {
       winner_name: 'Alice',
       current_player_name: 'Bob',
       kill_history: [
-        { timestamp: '2024-01-01T10:00:00Z', killer_name: 'Bob', victim_name: 'Charlie', task: 'Make them laugh', killer_session_token: 'sess-123' },
-        { timestamp: '2024-01-01T11:00:00Z', killer_name: 'Alice', victim_name: 'Bob', task: 'Say banana', killer_session_token: 'sess-alice' }
+        { timestamp: '2024-01-01T10:00:00Z', killer_name: 'Bob', victim_name: 'Charlie', task: 'Make them laugh', is_own_kill: 1 },
+        { timestamp: '2024-01-01T11:00:00Z', killer_name: 'Alice', victim_name: 'Bob', task: 'Say banana', is_own_kill: 0 }
       ],
       kill_count: [
         { name: 'Alice', count: 1 },
@@ -94,7 +93,7 @@ describe('Victory Page', () => {
     const namesInOrder = Array.from(document.querySelectorAll('#killCountTable tr td:first-child'))
       .map(td => td.textContent);
 
-    // ✅ Expect exact order as provided by server
+    // Expect exact order as provided by server
     assert.deepStrictEqual(namesInOrder, ['Zoe', 'Alice', 'Bob', 'Charlie']);
   });
 });

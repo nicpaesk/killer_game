@@ -1,4 +1,3 @@
-// test/game-summary.test.js
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { TestDatabase } from './setup.js';
@@ -9,13 +8,14 @@ function computeGameSummary(db, gameCode, sessionToken = null) {
   const winner = alivePlayers.length === 1 ? alivePlayers[0] : null;
 
   const historyRows = db.prepare(`
-    SELECT kh.*, k.name AS killer_name, v.name AS victim_name, k.session_token AS killer_session_token
+    SELECT kh.*, k.name AS killer_name, v.name AS victim_name,
+           (k.session_token = ?) AS is_own_kill
     FROM kill_history kh
     LEFT JOIN players k ON kh.killer_id = k.id
     LEFT JOIN players v ON kh.victim_id = v.id
     WHERE kh.game_id = ?
     ORDER BY kh.timestamp ASC
-  `).all(gameCode);
+  `).all(sessionToken || null, gameCode);
 
   const killCountArr = [];
   const players = db.prepare('SELECT name FROM players WHERE game_id = ?').all(gameCode);
@@ -65,9 +65,11 @@ describe('API: /api/game-summary logic', () => {
 
     assert.strictEqual(summary.winner_name, 'Alice');
     assert.strictEqual(summary.current_player_name, 'Bob');
-    assert.strictEqual(summary.kill_history.length, 2);
     assert.strictEqual(summary.kill_history[0].killer_name, 'Bob');
+    assert.strictEqual(summary.kill_history[0].is_own_kill, 1); // Bob is current player
     assert.strictEqual(summary.kill_history[1].killer_name, 'Alice');
+    assert.strictEqual(summary.kill_history[1].is_own_kill, 0); // Alice is not current player
+
 
     assert.deepStrictEqual(summary.kill_count, [
       { name: 'Alice', count: 1 },
@@ -76,4 +78,3 @@ describe('API: /api/game-summary logic', () => {
     ]);
   });
 });
-

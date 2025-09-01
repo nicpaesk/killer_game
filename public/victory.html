@@ -61,8 +61,7 @@
     const tr = document.createElement('tr');
 
     // Highlight if the current player was the killer
-    const isOwnKill = (k.killer_session_token === sessionToken);
-    if (isOwnKill) tr.classList.add('highlight');
+    if (k.is_own_kill) tr.classList.add('highlight');
 
     tr.innerHTML = `
       <td>${new Date(k.timestamp).toLocaleString()}</td>

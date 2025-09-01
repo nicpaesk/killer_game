@@ -223,13 +223,14 @@ app.get('/api/game-summary', (req, res) => {
 
     // Kill history with player names
     const historyRows = db.prepare(`
-      SELECT kh.*, k.name AS killer_name, v.name AS victim_name, k.session_token AS killer_session_token
+      SELECT kh.*, k.name AS killer_name, v.name AS victim_name,
+            (k.session_token = ?) AS is_own_kill
       FROM kill_history kh
       LEFT JOIN players k ON kh.killer_id = k.id
       LEFT JOIN players v ON kh.victim_id = v.id
       WHERE kh.game_id = ?
       ORDER BY kh.timestamp ASC
-    `).all(gameCode);
+    `).all(sessionToken || null, gameCode);
 
     // Kill count per player
     const killCountArr = [];
