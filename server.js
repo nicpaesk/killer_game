@@ -142,6 +142,21 @@ const DEFAULT_TASKS = [
 ];
 
 // ----------------------------
+// Input validation helpers
+// ----------------------------
+function validateGameCode(code) {
+  return typeof code === 'string' && /^[A-Z0-9]{4,10}$/.test(code.trim());
+}
+
+function validatePlayerName(name) {
+  return typeof name === 'string' && name.trim().length >= 1 && name.trim().length <= 50;
+}
+
+function validateTask(task) {
+  return typeof task === 'string' && task.trim().length >= 1 && task.trim().length <= 100;
+}
+
+// ----------------------------
 // API Endpoints
 // ----------------------------
 app.post('/api/create-game', (req, res) => {
@@ -160,11 +175,19 @@ app.post('/api/create-game', (req, res) => {
     }
 
     // Parse player names and tasks
-    const playersArray = playerNames.split('\n').map(s => s.trim()).filter(name => name !== '');
-    const tasksArray = tasks.split('\n').map(s => s.trim()).filter(t => t !== '');
+    const playersArray = playerNames.split('\n').map(s => s.trim()).filter(Boolean);
+    const tasksArray   = tasks.split('\n').map(s => s.trim()).filter(Boolean);
 
-    if (playersArray.length <= 1 || tasksArray.length === 0) {
+    if (playersArray.length < 2 || tasksArray.length === 0) {
       return res.status(400).json({ error: 'At least two players and one task are required' });
+    }
+
+    // Per-item validation (defensive)
+    if (!playersArray.every(validatePlayerName)) {
+      return res.status(400).json({ error: 'Invalid player names detected' });
+    }
+    if (!tasksArray.every(validateTask)) {
+      return res.status(400).json({ error: 'Invalid tasks detected' });
     }
 
     // Generate unique game code
@@ -276,6 +299,17 @@ io.on('connection', (socket) => {
   // When a client joins a room to see the lobby
   socket.on('join-game', (gameCode) => {
     try {
+      // Validate gameCode format and existence
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
       socket.join(gameCode);
       // Send the players list for the room to the requester
       const players = db.prepare(`
@@ -296,6 +330,16 @@ io.on('connection', (socket) => {
   socket.on('claim-identity', (data) => {
     try {
       const { gameCode, playerName } = data;
+
+      // Defensive input validation
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!validatePlayerName(playerName)) {
+        socket.emit('error', { message: 'Invalid player name.' });
+        return;
+      }
 
       console.log(`User ${socket.id} claiming identity ${playerName} in game ${gameCode}`);
 
@@ -354,6 +398,14 @@ io.on('connection', (socket) => {
   socket.on('cancel-identity', (data) => {
     try {
       const { gameCode, sessionToken } = data;
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!sessionToken || typeof sessionToken !== 'string') {
+        socket.emit('error', { message: 'Invalid session token.' });
+        return;
+      }
 
       console.log(`User ${socket.id} canceling identity in game ${gameCode}`);
 
@@ -512,6 +564,10 @@ io.on('connection', (socket) => {
     try {
       const sessionToken = (data && (data.sessionToken || data.session_token));
       const gameCode = data && (data.gameCode || data.game_code);
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
       if (!sessionToken) {
         socket.emit('error', { message: 'Missing session token.' });
         return;
