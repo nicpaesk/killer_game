@@ -128,14 +128,55 @@ describe('API Endpoints', () => {
 
       // Test validation logic
       let errorMessage = null;
-      if (playersArray.length === 0) {
-        errorMessage = 'At least one player is required';
+      if (playersArray.length < 2) {
+        errorMessage = 'At least two players are required';
       } else if (tasksArray.length === 0 && !(req.files && req.files.taskFile)) {
         errorMessage = 'At least one task is required';
       }
 
-      assert.strictEqual(errorMessage, 'At least one player is required');
+      assert.strictEqual(errorMessage, 'At least two players are required');
     });
+
+    test('should return error for less than two players list', () => {
+      const req = createMockReq({
+        playerNames: '\nToto\n\n', // Only empty lines
+        tasks: 'Task 1'
+      });
+
+      const playersArray = mockServerFunctions.parsePlayerNames(req.body.playerNames);
+      const tasksArray = mockServerFunctions.parseTasks(req.body.tasks);
+
+      // Test validation logic
+      let errorMessage = null;
+      if (playersArray.length < 2) {
+        errorMessage = 'At least two players are required';
+      } else if (tasksArray.length === 0 && !(req.files && req.files.taskFile)) {
+        errorMessage = 'At least one task is required';
+      }
+
+      assert.strictEqual(errorMessage, 'At least two players are required');
+    });
+
+    test('should return error for empty task list', () => {
+      const req = createMockReq({
+        playerNames: 'player1\nplayer2\n\n', // Only empty lines
+        tasks: '\n'
+      });
+
+      const playersArray = mockServerFunctions.parsePlayerNames(req.body.playerNames);
+      const tasksArray = mockServerFunctions.parseTasks(req.body.tasks);
+
+      // Test validation logic
+      let errorMessage = null;
+      if (playersArray.length < 2) {
+        errorMessage = 'At least two players are required';
+      } else if (tasksArray.length === 0 && !(req.files && req.files.taskFile)) {
+        errorMessage = 'At least one task is required';
+      }
+
+      assert.strictEqual(errorMessage, 'At least one task is required');
+    });
+
 
     test('should generate join URL correctly', () => {
       const req = createMockReq({});

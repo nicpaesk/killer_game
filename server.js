@@ -161,28 +161,46 @@ function validateTask(task) {
 // ----------------------------
 app.post('/api/create-game', (req, res) => {
   try {
-    let { playerNames, tasks } = req.body;
+    let { playerNames, tasks } = req.body || {};
 
-    // Handle file upload for tasks
+    // Handle optional file upload for tasks
     if (req.files && req.files.taskFile) {
-      const taskFile = req.files.taskFile;
-      const fileContent = taskFile.data.toString('utf8');
-      tasks = fileContent; // Override tasks with file content
+      try {
+        const taskFile = req.files.taskFile;
+        if (!taskFile.data || !Buffer.isBuffer(taskFile.data)) {
+          return res.status(400).json({ error: 'Invalid task file upload' });
+        }
+        const fileContent = taskFile.data.toString('utf8');
+        tasks = fileContent;
+      } catch (fileErr) {
+        console.error('Error reading task file:', fileErr);
+        return res.status(400).json({ error: 'Failed to process task file' });
+      }
     }
 
-    if (!playerNames || !tasks) {
-      return res.status(400).json({ error: 'Player names and tasks are required' });
+    if (typeof playerNames !== 'string' || typeof tasks !== 'string') {
+      return res.status(400).json({ error: 'Player names and tasks must be provided as strings' });
     }
 
-    // Parse player names and tasks
-    const playersArray = playerNames.split('\n').map(s => s.trim()).filter(Boolean);
-    const tasksArray   = tasks.split('\n').map(s => s.trim()).filter(Boolean);
+    // Parse player names and tasks into arrays
+    const playersArray = playerNames
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
 
-    if (playersArray.length < 2 || tasksArray.length === 0) {
-      return res.status(400).json({ error: 'At least two players and one task are required' });
+    const tasksArray = tasks
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (playersArray.length < 2) {
+      return res.status(400).json({ error: 'At least two players are required' });
+    }
+    if (tasksArray.length === 0) {
+      return res.status(400).json({ error: 'At least one task is required' });
     }
 
-    // Per-item validation (defensive)
+    // Per-item validation
     if (!playersArray.every(validatePlayerName)) {
       return res.status(400).json({ error: 'Invalid player names detected' });
     }
@@ -196,37 +214,36 @@ app.post('/api/create-game', (req, res) => {
       gameCode = generateGameCode();
     } while (db.prepare('SELECT id FROM games WHERE id = ?').get(gameCode));
 
-    // Generate creator token
+    // Generate creator session token
     const creatorToken = crypto.randomBytes(16).toString('hex');
 
-    // Insert game into database
+    // Insert game
     const insertGame = db.prepare(`
       INSERT INTO games (id, creator_session, status, task_pool)
       VALUES (?, ?, ?, ?)
     `);
-
     insertGame.run(gameCode, creatorToken, 'lobby', JSON.stringify(tasksArray));
 
-    // Insert players into database
+    // Insert players
     const insertPlayer = db.prepare(`
       INSERT INTO players (id, game_id, name, status)
       VALUES (?, ?, ?, ?)
     `);
-
     for (const playerName of playersArray) {
       const playerId = uuidv4();
-      insertPlayer.run(playerId, gameCode, playerName.trim(), 'not-joined');
+      insertPlayer.run(playerId, gameCode, playerName, 'not-joined');
     }
 
-    // Create join URL
+    // Build join URL
     const joinUrl = `${getServerUrl(req)}/game/${gameCode}`;
 
-    res.json({ gameCode, creatorToken, joinUrl });
+    return res.json({ gameCode, creatorToken, joinUrl });
   } catch (error) {
     console.error('Error creating game:', error);
-    res.status(500).json({ error: 'Failed to create game' });
+    return res.status(500).json({ error: 'Failed to create game' });
   }
 });
+
 
 app.get('/game/:gameCode', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'game.html'));
@@ -235,12 +252,16 @@ app.get('/game/:gameCode', (req, res) => {
 app.get('/api/game-summary', (req, res) => {
   try {
     const { gameCode } = req.query;
-    if (!gameCode || !/^[A-Z0-9]{4,8}$/.test(gameCode)) return res.status(400).json({ error: 'Invalid game code' });
+    if (!gameCode || !/^[A-Z0-9]{4,8}$/.test(gameCode)) {
+      return res.status(400).json({ error: 'Invalid game code' });
+    }
 
     const sessionToken = req.query.sessionToken || null;
 
     const game = getGameById.get(gameCode);
-    if (!game) return res.status(404).json({ error: 'Game not found' });
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
 
     // Winner
     const alivePlayers = listAlivePlayers.all(gameCode);
@@ -249,7 +270,7 @@ app.get('/api/game-summary', (req, res) => {
     // Kill history with player names
     const historyRows = db.prepare(`
       SELECT kh.*, k.name AS killer_name, v.name AS victim_name,
-            (k.session_token = ?) AS is_own_kill
+             (k.session_token = ?) AS is_own_kill
       FROM kill_history kh
       LEFT JOIN players k ON kh.killer_id = k.id
       LEFT JOIN players v ON kh.victim_id = v.id
@@ -257,24 +278,22 @@ app.get('/api/game-summary', (req, res) => {
       ORDER BY kh.timestamp ASC
     `).all(sessionToken || null, gameCode);
 
-    // Kill count per player
-    const killCountArr = [];
-    const players = db.prepare(`SELECT name FROM players WHERE game_id = ?`).all(gameCode);
-    players.forEach(p => {
-      // Count kills for this player
-      const count = historyRows.filter(h => h.killer_name === p.name).length;
-      killCountArr.push({ name: p.name, count });
-    });
-    // Sort descending by count, then by name
-    killCountArr.sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return a.name.localeCompare(b.name);
-    });
+    // Kill count per player (moved to SQL)
+    const killCountArr = db.prepare(`
+      SELECT p.name, COUNT(kh.id) AS count
+      FROM players p
+      LEFT JOIN kill_history kh ON kh.killer_id = p.id
+      WHERE p.game_id = ?
+      GROUP BY p.id
+      ORDER BY count DESC, p.name ASC
+    `).all(gameCode);
 
+    // Current player
     let currentPlayer = null;
     if (sessionToken) {
-      currentPlayer = db.prepare(`SELECT name FROM players WHERE session_token = ? AND game_id = ?`)
-                        .get(sessionToken, gameCode);
+      currentPlayer = db.prepare(`
+        SELECT name FROM players WHERE session_token = ? AND game_id = ?
+      `).get(sessionToken, gameCode);
     }
 
     res.json({
@@ -290,6 +309,7 @@ app.get('/api/game-summary', (req, res) => {
   }
 });
 
+
 // ----------------------------
 // Socket.IO handlers
 // ----------------------------
@@ -299,11 +319,16 @@ io.on('connection', (socket) => {
   // When a client joins a room to see the lobby
   socket.on('join-game', (gameCode) => {
     try {
-      // Validate gameCode format and existence
+      if (typeof gameCode !== 'string' || !gameCode.trim()) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+
       if (!validateGameCode(gameCode)) {
         socket.emit('error', { message: 'Invalid game code.' });
         return;
       }
+
       const game = getGameById.get(gameCode);
       if (!game) {
         socket.emit('error', { message: 'Game not found.' });
@@ -311,7 +336,7 @@ io.on('connection', (socket) => {
       }
 
       socket.join(gameCode);
-      // Send the players list for the room to the requester
+
       const players = db.prepare(`
         SELECT id, name, status, session_token, joined_at
         FROM players
@@ -319,10 +344,15 @@ io.on('connection', (socket) => {
         ORDER BY name
       `).all(gameCode);
 
+      if (!Array.isArray(players)) {
+        socket.emit('error', { message: 'Failed to load players.' });
+        return;
+      }
+
       socket.emit('player-list-update', players);
     } catch (error) {
-      console.error('Error joining game:', error);
-      socket.emit('error', { message: 'Failed to join game' });
+      console.error('Error in join-game handler:', error);
+      socket.emit('error', { message: 'Failed to join game.' });
     }
   });
 
@@ -460,177 +490,207 @@ io.on('connection', (socket) => {
   // -------------------------
   // SPRINT 2: Start Game
   // -------------------------
-  socket.on('start-game', (data) => {
-    try {
-      const { gameCode, creatorToken } = data || {};
+socket.on('start-game', (data = {}) => {
+  try {
+    const { gameCode, creatorToken } = data;
 
-      const game = getGameById.get(gameCode);
-      if (!game) {
-        socket.emit('error', { message: 'Game not found.' });
-        return;
-      }
-
-      // Validate creator
-      if (game.creator_session !== creatorToken) {
-        socket.emit('error', { message: 'Only the creator can start the game.' });
-        return;
-      }
-
-      if (game.status === 'active' || game.status === 'finished') {
-        // Already active/finished; still notify clients
-        io.to(gameCode).emit('game-started');
-        return;
-      }
-
-      // Get current alive players
-      const alive = listAlivePlayers.all(gameCode);
-      if (alive.length < 2) {
-        socket.emit('error', { message: 'Need at least 2 alive players to start.' });
-        return;
-      }
-
-      // Parse tasks from game's task_pool
-      let tasks;
-      try {
-        tasks = Array.isArray(JSON.parse(game.task_pool)) ? JSON.parse(game.task_pool) : [];
-      } catch {
-        tasks = [];
-      }
-      if (!tasks || tasks.length === 0) tasks = DEFAULT_TASKS;
-
-      // Create a single cycle by shuffling the list and assigning next as target
-      const ids = alive.map(p => p.id);
-      const shuffled = shuffleArray(ids);
-
-      // --- NEW: assign distinct tasks if possible ---
-      // Build tasksToAssign array of length shuffled.length
-      let tasksToAssign = [];
-      const numPlayers = shuffled.length;
-      const poolSize = tasks.length;
-
-      if (poolSize >= numPlayers) {
-        // Enough tasks for everyone: give unique tasks
-        const shuffledTasks = shuffleArray(tasks);
-        tasksToAssign = shuffledTasks.slice(0, numPlayers);
-      } else {
-        // Not enough tasks: give each available task uniquely first, then fill the rest randomly
-        const shuffledTasks = shuffleArray(tasks);
-        tasksToAssign = shuffledTasks.slice(); // unique tasks first
-        while (tasksToAssign.length < numPlayers) {
-          // pick random from the pool (repeats allowed only because pool is too small)
-          const pick = tasks[Math.floor(Math.random() * poolSize)];
-          tasksToAssign.push(pick);
-        }
-        // Optional: shuffle the final tasksToAssign so the unique-first order isn't predictable
-        tasksToAssign = shuffleArray(tasksToAssign);
-      }
-
-      const tx = db.transaction(() => {
-        for (let i = 0; i < shuffled.length; i++) {
-          const pid = shuffled[i];
-          const targetId = shuffled[(i + 1) % shuffled.length];
-          const assignedTask = tasksToAssign[i];
-          updatePlayerTargetAndTask.run(targetId, assignedTask, pid);
-        }
-        setGameStatus.run('active', gameCode);
-      });
-      tx();
-
-      // Broadcast that game started
-      io.to(gameCode).emit('game-started');
-
-      // DM each alive player with their assignment (private)
-      const updatedAlive = listAlivePlayers.all(gameCode);
-      for (const p of updatedAlive) {
-        const sockId = playerToSocket.get(p.id);
-        if (!sockId) continue; // player offline — they'll fetch on reconnect
-        const target = p.target_id ? getPlayerById.get(p.target_id) : null;
-        io.to(sockId).emit('your-assignment', {
-          target: target ? { id: target.id, name: target.name } : null,
-          task: p.task || null
-        });
-      }
-
-    } catch (error) {
-      console.error('start-game error:', error);
-      socket.emit('error', { message: 'Failed to start game.' });
+    // 🔒 Input validation
+    if (!validateGameCode(gameCode)) {
+      socket.emit('error', { message: 'Invalid game code.' });
+      return;
     }
-  });
+    if (!creatorToken || typeof creatorToken !== 'string') {
+      socket.emit('error', { message: 'Invalid creator token.' });
+      return;
+    }
+
+    const game = getGameById.get(gameCode);
+    if (!game) {
+      socket.emit('error', { message: 'Game not found.' });
+      return;
+    }
+
+    // Validate creator
+    if (game.creator_session !== creatorToken) {
+      socket.emit('error', { message: 'Only the creator can start the game.' });
+      return;
+    }
+
+    // Prevent restarting
+    if (game.status === 'active' || game.status === 'finished') {
+      io.to(gameCode).emit('game-started');
+      return;
+    }
+
+    // Ensure enough players
+    const alive = listAlivePlayers.all(gameCode);
+    if (alive.length < 2) {
+      socket.emit('error', { message: 'Need at least 2 players to start.' });
+      return;
+    }
+
+    // Parse task pool
+    let tasks;
+    try {
+      tasks = Array.isArray(JSON.parse(game.task_pool)) ? JSON.parse(game.task_pool) : [];
+    } catch {
+      tasks = [];
+    }
+    if (!tasks || tasks.length === 0) tasks = DEFAULT_TASKS;
+
+    // Create derangement (targets) + assign tasks
+    const ids = alive.map(p => p.id);
+    const shuffled = shuffleArray(ids);
+
+    let tasksToAssign = [];
+    const numPlayers = shuffled.length;
+    const poolSize = tasks.length;
+
+    if (poolSize >= numPlayers) {
+      const shuffledTasks = shuffleArray(tasks);
+      tasksToAssign = shuffledTasks.slice(0, numPlayers);
+    } else {
+      const shuffledTasks = shuffleArray(tasks);
+      tasksToAssign = [...shuffledTasks];
+      while (tasksToAssign.length < numPlayers) {
+        const pick = tasks[Math.floor(Math.random() * poolSize)];
+        tasksToAssign.push(pick);
+      }
+      tasksToAssign = shuffleArray(tasksToAssign);
+    }
+
+    // Transaction: assign target+task, update status
+    const tx = db.transaction(() => {
+      for (let i = 0; i < shuffled.length; i++) {
+        const pid = shuffled[i];
+        const targetId = shuffled[(i + 1) % shuffled.length];
+        const assignedTask = tasksToAssign[i];
+        updatePlayerTargetAndTask.run(targetId, assignedTask, pid);
+      }
+      setGameStatus.run('active', gameCode);
+    });
+    tx();
+
+    // Broadcast game start
+    io.to(gameCode).emit('game-started');
+
+    // DM each player with private assignment
+    const updatedAlive = listAlivePlayers.all(gameCode);
+    for (const p of updatedAlive) {
+      const sockId = playerToSocket.get(p.id);
+      if (!sockId) continue;
+      const target = p.target_id ? getPlayerById.get(p.target_id) : null;
+      io.to(sockId).emit('your-assignment', {
+        target: target ? { id: target.id, name: target.name } : null,
+        task: p.task || null
+      });
+    }
+  } catch (err) {
+    console.error('start-game error:', err);
+    socket.emit('error', { message: 'Failed to start game.' });
+  }
+});
+
 
   // -------------------------
   // SPRINT 2: Claim Kill (killer -> asks server to challenge target)
   // -------------------------
-  socket.on('claim-kill', (data) => {
-    try {
-      const sessionToken = (data && (data.sessionToken || data.session_token));
-      const gameCode = data && (data.gameCode || data.game_code);
-      if (!validateGameCode(gameCode)) {
-        socket.emit('error', { message: 'Invalid game code.' });
-        return;
-      }
-      if (!sessionToken) {
-        socket.emit('error', { message: 'Missing session token.' });
-        return;
-      }
-      const killer = getPlayerBySession.get(sessionToken);
-      if (!killer) {
-        socket.emit('error', { message: 'Invalid session.' });
-        return;
-      }
-      if (killer.game_id !== gameCode) {
-        socket.emit('error', { message: 'Session does not belong to this game.' });
-        return;
-      }
-      if (killer.status !== 'alive') {
-        socket.emit('error', { message: 'Eliminated players cannot claim kills.' });
-        return;
-      }
-      if (!killer.target_id) {
-        socket.emit('error', { message: 'You have no target.' });
-        return;
-      }
+  socket.on('claim-kill', (data = {}) => {
+  try {
+    const sessionToken = (data.sessionToken || data.session_token);
+    const gameCode = (data.gameCode || data.game_code);
 
-      const target = getPlayerById.get(killer.target_id);
-      if (!target) {
-        socket.emit('error', { message: 'Target not found.' });
-        return;
-      }
-      if (target.status !== 'alive') {
-        socket.emit('error', { message: 'Target is already eliminated.' });
-        return;
-      }
-
-      const targetSocketId = playerToSocket.get(target.id);
-      if (!targetSocketId) {
-        socket.emit('error', { message: 'Target is offline. Try again later.' });
-        return;
-      }
-
-      // Send challenge only to target
-      io.to(targetSocketId).emit('kill-challenge', {
-        killer_id: killer.id,
-        killer_name: killer.name,
-        task: killer.task
-      });
-
-    } catch (error) {
-      console.error('claim-kill error:', error);
-      socket.emit('error', { message: 'Claim-kill failed.' });
+    // 🔒 Input validation
+    if (!validateGameCode(gameCode)) {
+      socket.emit('error', { message: 'Invalid game code.' });
+      return;
     }
-  });
+    if (!sessionToken || typeof sessionToken !== 'string') {
+      socket.emit('error', { message: 'Missing session token.' });
+      return;
+    }
+
+    // ensure game is active
+    const game = getGameById.get(gameCode);
+    if (!game || game.status !== 'active') {
+      socket.emit('error', { message: 'Game not active.' });
+      return;
+    }
+
+    const killer = getPlayerBySession.get(sessionToken);
+    if (!killer) {
+      socket.emit('error', { message: 'Invalid session.' });
+      return;
+    }
+    if (killer.game_id !== gameCode) {
+      socket.emit('error', { message: 'Session does not belong to this game.' });
+      return;
+    }
+    if (killer.status !== 'alive') {
+      socket.emit('error', { message: 'Eliminated players cannot claim kills.' });
+      return;
+    }
+    if (!killer.target_id) {
+      socket.emit('error', { message: 'You have no target.' });
+      return;
+    }
+    // ensure a task exists for this killer
+    if (!killer.task || typeof killer.task !== 'string') {
+      socket.emit('error', { message: 'No task assigned to you.' });
+      return;
+    }
+
+    const target = getPlayerById.get(killer.target_id);
+    if (!target) {
+      socket.emit('error', { message: 'Target not found.' });
+      return;
+    }
+    if (target.status !== 'alive') {
+      socket.emit('error', { message: 'Target is already eliminated.' });
+      return;
+    }
+
+    const targetSocketId = playerToSocket.get(target.id);
+    if (!targetSocketId) {
+      socket.emit('error', { message: 'Target is offline. Try again later.' });
+      return;
+    }
+
+    // Send challenge only to target
+    io.to(targetSocketId).emit('kill-challenge', {
+      killer_id: killer.id,
+      killer_name: killer.name,
+      task: killer.task
+    });
+
+  } catch (err) {
+    console.error('claim-kill error:', err);
+    socket.emit('error', { message: 'Claim-kill failed.' });
+  }
+});
+
 
   // -------------------------
   // SPRINT 2: Resolve Kill (target confirms or denies)
   // -------------------------
   socket.on('resolve-kill', (data) => {
     try {
-      const sessionToken = (data && (data.sessionToken || data.session_token));
-      const killer_id = data && (data.killer_id || data.killerId);
-      const answer = data && data.answer;
-      if (!sessionToken) {
+      // Basic payload sanity check (non-breaking): keep original behavior/messages
+      if (!data || typeof data !== 'object') {
         socket.emit('error', { message: 'Missing session token.' });
         return;
       }
+
+      const sessionToken = (data && (data.sessionToken || data.session_token));
+      const killer_id = data && (data.killer_id || data.killerId);
+      const answer = data && data.answer;
+
+      // Validate session token type (consistent error message)
+      if (typeof sessionToken !== 'string' || sessionToken.trim() === '') {
+        socket.emit('error', { message: 'Missing session token.' });
+        return;
+      }
+
       const target = getPlayerBySession.get(sessionToken);
       if (!target) {
         socket.emit('error', { message: 'Invalid session.' });
@@ -641,6 +701,11 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Validate killer_id presence/type; preserve original error message
+      if (typeof killer_id !== 'string' || killer_id.trim() === '') {
+        socket.emit('error', { message: 'Killer not found.' });
+        return;
+      }
       const killer = getPlayerById.get(killer_id);
       if (!killer) {
         socket.emit('error', { message: 'Killer not found.' });
@@ -657,6 +722,7 @@ io.on('connection', (socket) => {
 
       const killerSocketId = playerToSocket.get(killer.id);
 
+      // Treat any non-'confirm' answer as denial (unchanged behavior)
       if (String(answer).toLowerCase() !== 'confirm') {
         // Denied -> notify killer only
         if (killerSocketId) {
@@ -738,6 +804,7 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Resolve-kill failed.' });
     }
   });
+
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
