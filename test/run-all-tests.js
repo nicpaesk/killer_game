@@ -14,8 +14,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const testFiles = [
   'setup.js',
-  'database.test.js',
   'api.test.js',
+  'database.test.js',
   'socket.test.js',
   'frontend.test.js',
   'victory-page.test.js',
@@ -23,6 +23,7 @@ const testFiles = [
   'kill-history.test.js',
   'endgame-socket.test.js',
   'game-summary-sorting.test.js',
+  'game-summary.api.test',
 ];
 
 console.log('🧪 Running Killer Game Sprint 1 Test Suite\n');

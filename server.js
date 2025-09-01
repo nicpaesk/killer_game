@@ -212,7 +212,9 @@ app.get('/game/:gameCode', (req, res) => {
 app.get('/api/game-summary', (req, res) => {
   try {
     const { gameCode } = req.query;
-    if (!gameCode) return res.status(400).json({ error: 'Missing game code' });
+    if (!gameCode || !/^[A-Z0-9]{4,8}$/.test(gameCode)) return res.status(400).json({ error: 'Invalid game code' });
+
+    const sessionToken = req.query.sessionToken || null;
 
     const game = getGameById.get(gameCode);
     if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -246,7 +248,6 @@ app.get('/api/game-summary', (req, res) => {
       return a.name.localeCompare(b.name);
     });
 
-    const sessionToken = req.query.sessionToken || null;
     let currentPlayer = null;
     if (sessionToken) {
       currentPlayer = db.prepare(`SELECT name FROM players WHERE session_token = ? AND game_id = ?`)
@@ -702,3 +703,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+export { app, server, io };
