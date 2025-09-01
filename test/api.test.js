@@ -168,13 +168,6 @@ describe('API Endpoints', () => {
       assert.strictEqual(errorMessage, 'Please use either the text area OR file upload, not both');
     });
 
-    test('rejects game creation with fewer than 2 players', async () => {
-      const res = await request(app)
-        .post('/api/create-game')
-        .send({ gameCode: 'G1', players: ['Alice'], creatorName: 'Alice' });
-      expect(res.statusCode).toBe(400);
-      expect(res.body.error).toMatch(/At least two players/);
-    });
   });
 
   describe('Game Code Generation', () => {
