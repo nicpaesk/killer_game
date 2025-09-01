@@ -17,7 +17,12 @@ const testFiles = [
   'database.test.js',
   'api.test.js',
   'socket.test.js',
-  'frontend.test.js'
+  'frontend.test.js',
+  'victory-page.test.js',
+  'game-summary.test.js',
+  'kill-history.test.js',
+  'endgame-socket.test.js',
+  'game-summary-sorting.test.js',
 ];
 
 console.log('🧪 Running Killer Game Sprint 1 Test Suite\n');

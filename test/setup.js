@@ -39,6 +39,17 @@ export class TestDatabase {
         joined_at DATETIME
       )
     `);
+    
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS kill_history (
+        id TEXT PRIMARY KEY,
+        game_id TEXT,
+        killer_id TEXT,
+        victim_id TEXT,
+        task TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
     return this.db;
   }
