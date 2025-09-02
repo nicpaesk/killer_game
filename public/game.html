@@ -172,10 +172,6 @@
     if (fromQuery) return fromQuery;
     const pathLast = window.location.pathname.split('/').filter(Boolean).pop();
     
-    console.log("==============");//debug
-    console.log("game code:");
-    console.log(pathLast);
-    
     return pathLast;
   }
 
@@ -230,7 +226,7 @@
 
   const reclaimModal = document.getElementById('reclaimModal');
   const reclaimNameInput = document.getElementById('reclaimNameInput');
-  const reclaimPinInput = document.getElementById('reclaimPinInput');
+  const reclaimInput = document.getElementById('reclaimPinInput');
   const reclaimError = document.getElementById('reclaimError');
   const reclaimCancel = document.getElementById('reclaimCancel');
   const reclaimSubmit = document.getElementById('reclaimSubmit');
@@ -363,6 +359,12 @@
     }
   });
 
+  confirmIdentityInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmIdentityConfirm.disabled) {
+        confirmIdentityConfirm.click();
+    }
+  });
+
   confirmIdentityCancel.addEventListener('click', () => {
     confirmIdentityModal.classList.remove('open');
   });
@@ -378,7 +380,7 @@
   // Show reclaim modal
   reclaimIdentityBtn.addEventListener('click', () => {
     reclaimNameInput.value = '';
-    reclaimPinInput.value = '';
+    reclaimInput.value = '';
     reclaimError.style.display = 'none';
     reclaimSubmit.disabled = true;
     reclaimModal.classList.add('open');
@@ -388,12 +390,17 @@
   // Reclaim modal validation
   function validateReclaimInputs() {
     const name = reclaimNameInput.value.trim();
-    const pin = reclaimPinInput.value.trim();
+    const pin = reclaimInput.value.trim();
     reclaimSubmit.disabled = !(name.length > 0 && pin.length === 4 && /^\d{4}$/.test(pin));
     reclaimError.style.display = 'none';
   }
   reclaimNameInput.addEventListener('input', validateReclaimInputs);
-  reclaimPinInput.addEventListener('input', validateReclaimInputs);
+  reclaimInput.addEventListener('input', validateReclaimInputs);
+  reclaimInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !reclaimSubmit.disabled) {
+        reclaimSubmit.click();
+    }
+  });
 
   reclaimCancel.addEventListener('click', () => {
     reclaimModal.classList.remove('open');
@@ -401,7 +408,7 @@
 
   reclaimSubmit.addEventListener('click', () => {
     const name = reclaimNameInput.value.trim();
-    const pin = reclaimPinInput.value.trim();
+    const pin = reclaimInput.value.trim();
     if (name && pin.length === 4 && /^\d{4}$/.test(pin)) {
       socket.emit('reclaim-identity', { gameCode, playerName: name, pin });
       reclaimModal.classList.remove('open');
