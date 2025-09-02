@@ -37,6 +37,7 @@ db.exec(`
     game_id TEXT,
     name TEXT,
     session_token TEXT,
+    pin_code TEXT,
     target_id TEXT,
     assassin_id TEXT,
     task TEXT,
@@ -154,6 +155,10 @@ function validatePlayerName(name) {
 
 function validateTask(task) {
   return typeof task === 'string' && task.trim().length >= 1 && task.trim().length <= 100;
+}
+
+function validatePin(pin) {
+  return typeof pin === 'string' && /^\d{4}$/.test(pin.trim());
 }
 
 // ----------------------------
@@ -356,10 +361,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Claim identity (player picks their name and joins as 'alive')
-  socket.on('claim-identity', (data) => {
+    // Claim identity (player picks their name and joins as 'alive')
+    socket.on('claim-identity', (data) => {
     try {
-      const { gameCode, playerName } = data;
+      const { gameCode, playerName, pin } = data;
 
       // Defensive input validation
       if (!validateGameCode(gameCode)) {
@@ -368,6 +373,10 @@ io.on('connection', (socket) => {
       }
       if (!validatePlayerName(playerName)) {
         socket.emit('error', { message: 'Invalid player name.' });
+        return;
+      }
+      if (!validatePin(pin)) {
+        socket.emit('error', { message: 'Invalid PIN. Must be 4 digits.' });
         return;
       }
 
@@ -384,15 +393,16 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Generate session token
+      // Generate session token and hash PIN
       const sessionToken = crypto.randomBytes(16).toString('hex');
+      const hashedPin = crypto.createHash('sha256').update(pin).digest('hex');
 
-      // Update player status, session token, and joined_at timestamp
+      // Update player status, session token, PIN hash, and joined_at timestamp
       db.prepare(`
         UPDATE players
-        SET status = 'alive', session_token = ?, joined_at = CURRENT_TIMESTAMP
+        SET status = 'alive', session_token = ?, pin_code = ?, joined_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(sessionToken, player.id);
+      `).run(sessionToken, hashedPin, player.id);
 
       // Send confirmation to the claiming client
       socket.emit('identity-confirmed', {
@@ -421,6 +431,112 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Error claiming identity:', error);
       socket.emit('error', { message: 'Failed to claim identity' });
+    }
+  });
+
+  socket.on('reclaim-identity', (data) => {
+    try {
+      const { gameCode, playerName, pin } = data;
+
+      // Defensive input validation
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!validatePlayerName(playerName)) {
+        socket.emit('error', { message: 'Invalid player name.' });
+        return;
+      }
+      if (!validatePin(pin)) {
+        socket.emit('error', { message: 'Reclaim failed.' });
+        return;
+      }
+
+      console.log(`User ${socket.id} attempting to reclaim identity ${playerName} in game ${gameCode}`);
+
+      // Find player with matching name and existing PIN
+      const player = db.prepare(`
+        SELECT * FROM players
+        WHERE game_id = ? AND name = ? AND pin_code IS NOT NULL
+      `).get(gameCode, playerName);
+
+      if (!player) {
+        socket.emit('error', { message: 'Reclaim failed.' });
+        return;
+      }
+
+      // Verify PIN
+      const hashedPin = crypto.createHash('sha256').update(pin).digest('hex');
+      if (player.pin_code !== hashedPin) {
+        socket.emit('error', { message: 'Reclaim failed.' });
+        return;
+      }
+
+      // Find and notify old session (if any)
+      if (player.session_token && sessionToSocket.has(player.session_token)) {
+        const oldSocketId = sessionToSocket.get(player.session_token);
+        io.to(oldSocketId).emit('session-invalidated');
+        sessionToSocket.delete(player.session_token);
+      }
+
+      // Generate new session token
+      const newSessionToken = crypto.randomBytes(16).toString('hex');
+
+      // Get game status
+      const game = getGameById.get(gameCode);
+
+      // If game is still in lobby, set status to 'alive'
+      if (game && game.status === 'lobby') {
+        db.prepare(`
+          UPDATE players
+          SET session_token = ?, status = 'alive'
+          WHERE id = ?
+        `).run(newSessionToken, player.id);
+      } else {
+        // Otherwise, just update session_token
+        db.prepare(`
+          UPDATE players
+          SET session_token = ?
+          WHERE id = ?
+        `).run(newSessionToken, player.id);
+      }
+
+      // Send confirmation to the reclaiming client
+      socket.emit('identity-reclaimed', {
+        sessionToken: newSessionToken,
+        playerName: player.name,
+        playerId: player.id
+      });
+
+      // Store mapping so we can DM this socket later
+      sessionToSocket.set(newSessionToken, socket.id);
+      playerToSocket.set(player.id, socket.id);
+      socket.data.sessionToken = newSessionToken;
+      socket.data.playerId = player.id;
+      socket.data.gameCode = gameCode;
+
+      // If game is active and player was alive, send their current assignment
+      if (game && game.status === 'active' && player.status === 'alive') {
+        const target = player.target_id ? getPlayerById.get(player.target_id) : null;
+        socket.emit('your-assignment', {
+          target: target ? { id: target.id, name: target.name } : null,
+          task: player.task || null
+        });
+      }
+
+      // Broadcast updated player list to all clients in the game room
+      const updatedPlayers = db.prepare(`
+        SELECT id, name, status, session_token, joined_at
+        FROM players
+        WHERE game_id = ?
+        ORDER BY name
+      `).all(gameCode);
+
+      io.to(gameCode).emit('player-list-update', updatedPlayers);
+
+    } catch (error) {
+      console.error('Error reclaiming identity:', error);
+      socket.emit('error', { message: 'Reclaim failed.' });
     }
   });
 

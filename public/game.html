@@ -59,8 +59,9 @@
       <div id="selectionPhase" class="selection-phase">
         <div class="smallmuted">Select your identity</div>
         <p>You have tentatively selected: <strong id="selectedPlayerName">None</strong></p>
-        <div style="text-align:center; margin-top:8px;">
+        <div style="text-align:center; margin-top:8px; display:flex; gap:8px; justify-content:center;">
           <button id="confirmIdentityBtn" class="btn primary" disabled>Confirm My Identity</button>
+          <button id="reclaimIdentityBtn" class="btn ghost">Reclaim Existing Identity</button>
         </div>
       </div>
 
@@ -125,6 +126,41 @@
       </div>
     </div>
   </div>
+  
+<!-- Confirm Identity Modal (Set PIN) -->
+  <div id="confirmIdentityModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3 id="confirmIdentityModalTitle">Set Your PIN</h3>
+      <p id="confirmIdentityModalText" class="smallmuted">Enter a 4-digit PIN to secure your identity. You'll need this PIN to reclaim your identity if you lose your session.</p>
+      <div class="field">
+        <input id="confirmIdentityInput" type="password" placeholder="Enter 4-digit PIN" maxlength="4" autocomplete="off" />
+        <div id="confirmIdentityError" class="smallmuted" style="color:red; margin-top:6px; display:none;"></div>
+      </div>
+      <div style="text-align:right; margin-top:8px">
+        <button id="confirmIdentityCancel" class="btn ghost">Cancel</button>
+        <button id="confirmIdentityConfirm" class="btn primary" disabled>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reclaim Identity Modal -->
+  <div id="reclaimModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Reclaim Your Identity</h3>
+      <p class="smallmuted">Enter your player name and PIN to reclaim your identity.</p>
+      <div class="field">
+        <input id="reclaimNameInput" type="text" placeholder="Enter your player name" autocomplete="off" />
+      </div>
+      <div class="field">
+        <input id="reclaimPinInput" type="password" placeholder="Enter your 4-digit PIN" maxlength="4" autocomplete="off" />
+      </div>
+      <div id="reclaimError" class="smallmuted" style="color:red; margin-top:6px; display:none;"></div>
+      <div style="text-align:right; margin-top:8px">
+        <button id="reclaimCancel" class="btn ghost">Cancel</button>
+        <button id="reclaimSubmit" class="btn primary" disabled>Reclaim Identity</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (() => {
@@ -135,8 +171,14 @@
     const fromQuery = new URLSearchParams(window.location.search).get('gameCode') || new URLSearchParams(window.location.search).get('game');
     if (fromQuery) return fromQuery;
     const pathLast = window.location.pathname.split('/').filter(Boolean).pop();
+    
+    console.log("==============");//debug
+    console.log("game code:");
+    console.log(pathLast);
+    
     return pathLast;
   }
+
   const gameCode = getGameCode();
   document.getElementById('gameCode').textContent = gameCode ? `Game: ${gameCode}` : 'Game';
 
@@ -150,6 +192,7 @@
   const playersListEl = document.getElementById('playersList');
   const selectedNameEl = document.getElementById('selectedPlayerName');
   const confirmIdentityBtn = document.getElementById('confirmIdentityBtn');
+  const reclaimIdentityBtn = document.getElementById('reclaimIdentityBtn'); 
   const startGameContainer = document.getElementById('startGameContainer');
   const startGameBtn = document.getElementById('startGameBtn');
 
@@ -176,11 +219,28 @@
   const graveList = document.getElementById('graveList');
   const alertBox = document.getElementById('alert');
   const youNameSpan = document.getElementById('youName');
+  
+  const confirmIdentityModal = document.getElementById('confirmIdentityModal');
+  const confirmIdentityModalTitle = document.getElementById('confirmIdentityModalTitle');
+  const confirmIdentityModalText = document.getElementById('confirmIdentityModalText');
+  const confirmIdentityInput = document.getElementById('confirmIdentityInput');
+  const confirmIdentityCancel = document.getElementById('confirmIdentityCancel');
+  const confirmIdentityConfirm = document.getElementById('confirmIdentityConfirm');
+  const confirmIdentityError = document.getElementById('confirmIdentityError');
+
+  const reclaimModal = document.getElementById('reclaimModal');
+  const reclaimNameInput = document.getElementById('reclaimNameInput');
+  const reclaimPinInput = document.getElementById('reclaimPinInput');
+  const reclaimError = document.getElementById('reclaimError');
+  const reclaimCancel = document.getElementById('reclaimCancel');
+  const reclaimSubmit = document.getElementById('reclaimSubmit');
 
   // State
   let tentativelySelected = null;
   let mySession = localStorage.getItem(sessionKey) || null;
   let myName = localStorage.getItem(playerNameKey) || null;
+  let pinMode = 'new'; // 'new' or 'reclaim'
+  let pendingPlayerName = null;
   // IMPORTANT: detect creator via the exact key your create UI sets (reuse original pattern)
   let isCreator = !!localStorage.getItem(creatorKey);
   let role = 'lobby'; // 'lobby' | 'alive' | 'dead'
@@ -276,10 +336,76 @@
     }
   });
 
-  // identity confirm
+  // identity confirm (Set PIN)
   confirmIdentityBtn.addEventListener('click', () => {
     if (!tentativelySelected) return;
-    socket.emit('claim-identity', { gameCode, playerName: tentativelySelected });
+    pendingPlayerName = tentativelySelected;
+    confirmIdentityInput.value = '';
+    confirmIdentityConfirm.disabled = true;
+    confirmIdentityError.style.display = 'none';
+    confirmIdentityModal.classList.add('open');
+    confirmIdentityInput.focus();
+  });
+
+  // PIN input validation
+  confirmIdentityInput.addEventListener('input', () => {
+    const value = confirmIdentityInput.value.trim();
+    if (value === '') {
+      confirmIdentityConfirm.disabled = true;
+      confirmIdentityError.style.display = 'none';
+    } else if (!/^\d{4}$/.test(value)) {
+      confirmIdentityConfirm.disabled = true;
+      confirmIdentityError.textContent = 'PIN must be exactly 4 digits';
+      confirmIdentityError.style.display = 'block';
+    } else {
+      confirmIdentityConfirm.disabled = false;
+      confirmIdentityError.style.display = 'none';
+    }
+  });
+
+  confirmIdentityCancel.addEventListener('click', () => {
+    confirmIdentityModal.classList.remove('open');
+  });
+
+  confirmIdentityConfirm.addEventListener('click', () => {
+    const pin = confirmIdentityInput.value.trim();
+    if (pin.length === 4 && /^\d{4}$/.test(pin) && pendingPlayerName) {
+      socket.emit('claim-identity', { gameCode, playerName: pendingPlayerName, pin });
+      confirmIdentityModal.classList.remove('open');
+    }
+  });
+
+  // Show reclaim modal
+  reclaimIdentityBtn.addEventListener('click', () => {
+    reclaimNameInput.value = '';
+    reclaimPinInput.value = '';
+    reclaimError.style.display = 'none';
+    reclaimSubmit.disabled = true;
+    reclaimModal.classList.add('open');
+    reclaimNameInput.focus();
+  });
+
+  // Reclaim modal validation
+  function validateReclaimInputs() {
+    const name = reclaimNameInput.value.trim();
+    const pin = reclaimPinInput.value.trim();
+    reclaimSubmit.disabled = !(name.length > 0 && pin.length === 4 && /^\d{4}$/.test(pin));
+    reclaimError.style.display = 'none';
+  }
+  reclaimNameInput.addEventListener('input', validateReclaimInputs);
+  reclaimPinInput.addEventListener('input', validateReclaimInputs);
+
+  reclaimCancel.addEventListener('click', () => {
+    reclaimModal.classList.remove('open');
+  });
+
+  reclaimSubmit.addEventListener('click', () => {
+    const name = reclaimNameInput.value.trim();
+    const pin = reclaimPinInput.value.trim();
+    if (name && pin.length === 4 && /^\d{4}$/.test(pin)) {
+      socket.emit('reclaim-identity', { gameCode, playerName: name, pin });
+      reclaimModal.classList.remove('open');
+    }
   });
 
   // handle server identity responses
@@ -294,6 +420,17 @@
     socket.emit('join-game', gameCode);
   });
 
+  socket.on('identity-reclaimed', (data) => {
+    mySession = data.sessionToken;
+    myName = data.playerName;
+    localStorage.setItem(sessionKey, mySession);
+    localStorage.setItem(playerNameKey, myName);
+    updateDisplayedName(myName);
+    hide(selectionPhase);
+    toast(`Identity reclaimed: ${myName}`);
+    socket.emit('join-game', gameCode);
+  });
+
   socket.on('identity-canceled', (data) => {
     mySession = null;
     myName = null;
@@ -305,6 +442,23 @@
     confirmIdentityBtn.disabled = true;
     show(selectionPhase);
     socket.emit('join-game', gameCode);
+  });
+
+    socket.on('session-invalidated', () => {
+      // Clear session and player name from storage
+      mySession = null;
+      myName = null;
+      localStorage.removeItem(sessionKey);
+      localStorage.removeItem(playerNameKey);
+      updateDisplayedName(null);
+      tentativelySelected = null;
+      selectedNameEl.textContent = 'None';
+      confirmIdentityBtn.disabled = true;
+      show(selectionPhase);
+      reclaimIdentityBtn.style.display = 'inline-block';
+      reclaimIdentityBtn.disabled = false;
+      toast('Your session was reclaimed elsewhere. Please select or reclaim your identity.');
+      socket.emit('join-game', gameCode);
   });
 
   // When server sends player-list-update: render it
@@ -471,7 +625,13 @@
 
   // initial UI
   if (mySession) hide(selectionPhase);
-  else { show(selectionPhase); confirmIdentityBtn.disabled = true; }
+  else {
+    show(selectionPhase);
+    confirmIdentityBtn.disabled = true;
+    reclaimIdentityBtn.style.display = 'inline-block';
+    reclaimIdentityBtn.disabled = false;
+  }
+
   // Ensure startGameContainer visible if creator (initial)
   if (isCreator) startGameContainer.style.display = 'block';
 })();
