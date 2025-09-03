@@ -350,3 +350,121 @@ The task is complete when I can:
 
 Impressive performances. Code running at first try, even refactored it imediatly when I detailed some UI specifications.
 Very user-friendly with its file visualisation feature. Far moreadapted to the code than Deepseek.
+
+### Sprint 2: The Silent Hunt
+
+**AI used:** ChatGPT 4.0
+
+#### Prompt
+
+<div  class="ai-response">
+Based on your ideas, I've refined the plan for Sprint 2 to focus on the core gameplay loop while incorporating your key enhancements: hiding information from living players and adding kill confirmation. The task refresh mechanic and animated recap are great ideas but will be deferred to future sprints to keep Sprint 2 manageable and focused. The graveyard view for dead players will be implemented but kept basic for now; we can make it toggleable in a later sprint if needed.
+
+Here's the prompt for the AI to execute Sprint 2: "The Silent Hunt".
+
+---
+
+### **AI Prompt for Sprint 2: The Silent Hunt**
+
+**Role:** You are an expert full-stack Node.js developer. Your task is to implement the core gameplay mechanics for the "Killer" game, focusing on secrecy and preventing spoilers. You are starting from a **completed and functional Sprint 1 codebase.**
+
+**Project Context & New Philosophy:**
+
+- **Current State:** The lobby system is fully working. Players can join, confirm identities, and the creator can start the game.
+- **Goal of Sprint 2:** To make the game playable with **hidden information**. Living players must not know who is alive or dead, preserving the mystery. Dead players gain a graveyard view to spectate.
+- **Core Principle:** Living players operate in the dark. Dead players can see all.
+
+**Technical Stack & Constraints:**
+
+- **Backend:** Node.js, Express, Socket.IO, SQLite with `better-sqlite3`.
+- **Frontend:** Vanilla JS in `public/game.html`. This file must now handle three views: Lobby, Gameplay (Living), and Graveyard (Dead).
+- **Database:** Use the existing `games` and `players` tables.
+
+**Absolute Requirements & Tasks:**
+
+**1. The "Start Game" Logic:**
+
+- **Backend:** Create a new Socket.IO event listener, e.g., `start-game`.
+  - It should be called by the creator's client (validate using the `creator_session` token).
+  - When triggered, the server must:
+    - Fetch all players for the game where `status = 'alive'`.
+    - **Create a circular derangement:** Randomly assign each player a target such that everyone is someone's target and no one is their own target. (This creates one single circle of players).
+    - Assign a random task from the game's `task_pool` to each player.
+    - Update the `players` table: set `target_id` (the ID of their target) and `task` for each player.
+    - Update the `games` table: set `status = 'active'`.
+    - Broadcast a `game-started` event to the entire game room. This event should force all clients to switch from the lobby view to the gameplay view.
+
+**2. The Gameplay View - TWO Separate Experiences:**
+
+- **A. Living Player View:** This is the main view after `game-started` for players with `status = 'alive'`.
+  - **Content:**
+    - "Your Target: [Target Name]"
+    - "Your Task: [Task Description]"
+  - **Button:** "ELIMINATE TARGET". This button must have a double-confirmation flow (see below).
+  - **Crucially:** **Do NOT show a player list, alive counter, or graveyard.** Living players must have zero information about others' statuses.
+- **B. Dead Player View (The Graveyard):** If a player's status is `eliminated`, their view must automatically switch upon receiving game updates.
+  - **Content:** A title like "You have been eliminated. You are now a spectator."
+  - **Spectator Mode:** Show a list of all players, with icons or status indicators (e.g., ♥ for alive, ☠ for dead). This list should update in real-time as players are eliminated.
+  - This view should be simple and informative but not overly detailed.
+
+**3. The Enhanced Kill Verification Flow with Double Confirmation:**
+
+- **Step A - Double Confirmation Claim:** When a killer clicks "ELIMINATE TARGET" in the living view, **do not send the event immediately.** Instead, show a modal/popup:
+  - Message: `"You are about to claim the elimination of [Target Name] by completing the task: [Task Description]. This action cannot be undone. Are you absolutely sure?"`
+  - Buttons: "CANCEL" and "YES, I ELIMINATED THEM".
+  - Only clicking "YES..." emits the `claim-kill` event to the server.
+- **Step B - Server Validation & Challenge:** The server handles the `claim-kill` event:
+  - Validates the killer's `session_token`.
+  - Checks that the killer and their target are still alive.
+  - **Then, it emits a specific `kill-challenge` event ONLY to the socket of the target player.**
+- **Step C - Target's Response:** The target's client, upon receiving the `kill-challenge` event, must display a **blocking modal** with the message:
+  - `"[Killer Name] claims they eliminated you by making you do: [Task Description]. Do you confirm?"`
+  - With two buttons: **"CONFIRM"** and **"DENY"**.
+  - Clicking either button sends a `resolve-kill` event back to the server with the answer.
+- **Step D - Resolution:** The server handles the `resolve-kill` event:
+  - **If CONFIRM:**
+    1.  Mark the target player as `eliminated` (set `status = 'eliminated'`).
+    2.  Assign the target's `target_id` to the killer (the killer inherits the target).
+    3.  Update the killer's `task` to be the target's `task`.
+    4.  Broadcast a `player-eliminated` event with the target's name to the entire room. This will update the graveyard views for dead players and change the view for the newly dead player.
+    5.  Send a `new-target` event specifically to the killer with their new target and task info.
+    6.  Check if the game is over (only one player left). If so, broadcast a `game-over` event with the winner's info. For now, just show a simple winner message; the animated recap will be in a future sprint.
+  - **If DENY:** Send a `kill-denied` event only to the killer, notifying them to try again.
+
+**4. End-Game Handling (Basic):**
+
+- On `game-over`, broadcast a simple message to all players: "Game Over! [Winner Name] is the winner!"
+- **Note:** The animated recap with the chain of kills is deferred to a future sprint. For now, just declare the winner.
+
+**Definition of Done for Sprint 2:**
+The task is complete when you can:
+
+1.  As the creator, click "Start Game" and see the lobby view on all players' screens change to the appropriate view (living or dead if already eliminated).
+2.  As a living player, see only your target and task, with no spoilers.
+3.  Click "ELIMINATE TARGET" and get a double-confirmation modal.
+4.  After confirmation, see a verification prompt appear **only on your target's phone**.
+5.  Have the target click "CONFIRM" and see:
+    - The target's screen switch to the graveyard view.
+    - The killer's screen update to show a new target (if applicable).
+    - The graveyard views update for dead players.
+6.  Have the target click "DENY" and see a failure message only on the killer's screen.
+
+**Please provide the complete code for:**
+
+1.  The updated `server.js` (including the new `start-game`, `claim-kill`, and `resolve-kill` event handlers, and the derangement logic).
+2.  The updated `public/game.html` (with the new living and dead views, and the modals for confirmation and challenge).
+3.  Instructions for any new SQL queries or database updates needed.
+
+**Deferred to Future Sprints:**
+
+- Task refresh mechanic (will be Sprint 3).
+- Animated end-game recap (will be Sprint 4).
+- Toggleable graveyard view (can be added in a polish sprint).
+
+This approach keeps Sprint 2 focused on the essential gameplay while incorporating your critical feedback on hidden information and confirmation. Let me know if you want to adjust this plan!
+
+</div>
+
+#### Conclusion
+
+ChatGpt got lost very quickly when given all the code files. I found it's responses not so relevant and very often wrong.
