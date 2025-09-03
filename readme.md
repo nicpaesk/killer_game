@@ -364,7 +364,7 @@ Here's the prompt for the AI to execute Sprint 2: "The Silent Hunt".
 
 ---
 
-### **AI Prompt for Sprint 2: The Silent Hunt**
+**AI Prompt for Sprint 2: The Silent Hunt**
 
 **Role:** You are an expert full-stack Node.js developer. Your task is to implement the core gameplay mechanics for the "Killer" game, focusing on secrecy and preventing spoilers. You are starting from a **completed and functional Sprint 1 codebase.**
 
@@ -473,3 +473,70 @@ Additional tasks done:
 #### Conclusion
 
 ChatGpt got lost very quickly when given all the code files. I found it's responses not so relevant and very often wrong.
+
+### **Sprint 3: Polish & Deployment Preparation**
+
+**AI uded:** Deepseek deep thinking
+
+#### Prompt
+
+<div  class="ai-response">
+
+**Final Polish & Deployment Preparation**
+
+**Role:** You are a front-end polishing expert and DevOps engineer. The "Killer" game has all its core features implemented: Lobby, Gameplay with PIN recovery, and a Victory page. Your task is to perform the final polish and prepare the project for a stable self-hosted deployment. **No new features are to be added.**
+
+**Current State:**
+
+- `index.html`: Game creation page.
+- `game.html`: Contains the entire flow (lobby, PIN setup/recovery, gameplay, graveyard views).
+- `victory.html`: The end-game screen showing the assassin's legacy.
+- `server.js`: Handles all game logic, real-time communication, and PIN-based authentication.
+
+**Mandate: Minimal changes focused on stability, user experience, and deployment.**
+
+**Please provide code and instructions for the following tasks:**
+
+**1. Cross-Browser & Mobile Responsiveness Check:**
+
+- Review the CSS in all HTML files. Ensure all buttons are large enough for touch (min 44x44px) and that all text is readable on mobile screens without zooming. Use responsive units (`rem`, `%`) over fixed pixels (`px`) where possible.
+- Ensure any modals (for PIN entry, kill confirmation) are centered and display correctly on both mobile and desktop views.
+
+**2. Enhanced User Feedback:**
+
+- **Add a "Reconnecting..." indicator:** Using Socket.IO's built-in events, show a small, non-obtrusive message (e.g., a red bar at the top) when the client loses connection to the server and is attempting to reconnect.
+- **Add loading spinners:** Any button that triggers a Socket.IO event (e.g., "Claim Identity", "Eliminate Target") should immediately show a loading spinner and be disabled until a response is received from the server. This prevents double-clicks and provides crucial feedback.
+
+**3. Victory Page Integration:**
+
+- Ensure the transition from the game view (in `game.html`) to the `victory.html` page is seamless. The victory page should receive the necessary data (list of kills, winner) via URL parameters or a server-redirect pattern that fits the existing codebase.
+
+**4. Robust Error Handling:**
+
+- Add a global `socket.on('error')` listener in your client-side JS to catch any generic error messages from the server and display them in a user-friendly way (e.g., a toast notification), instead of failing silently.
+- In `server.js`, add basic try-catch blocks around critical database operations and Socket.IO event handlers. Errors should be logged to the console and a generic error message should be sent to the client.
+
+**5. Deployment Package & Documentation:**
+
+- **Create a `README.md` file** with clear, step-by-step sections:
+  - `## Installation`: `npm install`
+  - `## Running the Game`: `node server.js`
+  - `## How to Play for Users`: A simple 3-step guide.
+  - `## Self-Hosting Guide`: The **most important section.** Provide detailed instructions for:
+    1.  Installing Caddy (`sudo apt install caddy` or equivalent).
+    2.  The exact contents of the `Caddyfile` (e.g., `game.yourdomain.com { reverse_proxy localhost:3000 }`).
+    3.  Using PM2 to run the game forever (`pm2 start server.js --name "killer-game"`).
+    4.  Port forwarding on a home router (a general explanation).
+- **Environment Variables:** Use the `dotenv` package to move the server port (and any other configuration) into a `.env` file. Provide an example `.env.example` file.
+
+**6. Final Security Check:**
+
+- Ensure the PIN hashing logic is sound and that no secrets are exposed in client-side code.
+- Verify that all database queries use parameterization to prevent SQL injection.
+
+**Definition of Done:**
+The task is complete when the game is visually polished, provides clear feedback to users, handles errors gracefully, and is accompanied by a comprehensive guide that allows the user to self-host it on their own machine.
+
+**your response must be to ask me to provide you the existing code for the server and the html files so that you can work from them after**
+
+</div>
