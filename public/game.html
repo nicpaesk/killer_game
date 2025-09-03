@@ -74,7 +74,7 @@
         <p>You have tentatively selected: <strong id="selectedPlayerName">None</strong></p>
         <div style="text-align:center; margin-top:8px; display:flex; gap:8px; justify-content:center;">
           <button id="confirmIdentityBtn" class="btn primary" disabled>Confirm My Identity</button>
-          <button id="reclaimIdentityBtn" class="btn ghost">Reclaim Existing Identity</button>
+          <button id="reclaimLobbyBtn" class="btn ghost">Reclaim Existing Identity</button>
         </div>
       </div>
 
@@ -179,7 +179,6 @@
 (() => {
   const socket = io();
 
-
   function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
@@ -194,6 +193,15 @@
     return pathLast;
   }
 
+  // Reclaim modal validation
+  function validateReclaimInputs() {
+    const name = reclaimNameInput.value.trim();
+    const pin = reclaimInput.value.trim();
+    reclaimSubmit.disabled = !(name.length > 0 && pin.length === 4 && /^\d{4}$/.test(pin));
+    reclaimError.style.display = 'none';
+  }
+
+
   const gameCode = getGameCode();
   document.getElementById('gameCode').textContent = gameCode ? `Game: ${gameCode}` : 'Game';
 
@@ -207,7 +215,7 @@
   const playersListEl = document.getElementById('playersList');
   const selectedNameEl = document.getElementById('selectedPlayerName');
   const confirmIdentityBtn = document.getElementById('confirmIdentityBtn');
-  const reclaimIdentityBtn = document.getElementById('reclaimIdentityBtn'); 
+  const reclaimLobbyBtn = document.getElementById('reclaimLobbyBtn'); 
   const startGameContainer = document.getElementById('startGameContainer');
   const startGameBtn = document.getElementById('startGameBtn');
 
@@ -285,7 +293,16 @@
       youNameSpan.textContent = '—';
     }
   }
-  updateDisplayedName(localStorage.getItem(playerNameKey));
+
+  function fillGraveyard(players){
+    graveList.innerHTML = '';
+    (players || []).forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'list-item';
+      li.innerHTML = `<div>${escapeHtml(p.name)}</div><div class="pill">${p.status === 'alive' ? '♥ alive' : '☠ eliminated'}</div>`;
+      graveList.appendChild(li);
+    });
+  }
 
   // Show appropriate view based on game state and authentication
   function updateViewVisibility() {
@@ -310,17 +327,6 @@
       show(lobbySection);
     }
   }
-
-  socket.on('connect', () => {
-    connectionStatus.textContent = 'Connected to game';
-    connectionStatus.className = 'connection-status connected';
-    socket.emit('join-game', gameCode);
-    if (mySession) socket.emit('identify', { session_token: mySession, game_id: gameCode });
-  });
-  socket.on('disconnect', () => {
-    connectionStatus.textContent = 'Disconnected - trying to reconnect...';
-    connectionStatus.className = 'connection-status disconnected';
-  });
 
   // Render the player list client-side using server data; include select/cancel buttons
   function renderPlayerList(players) {
@@ -425,7 +431,7 @@
   });
 
   // Show reclaim modal
-  reclaimIdentityBtn.addEventListener('click', () => {
+  reclaimLobbyBtn.addEventListener('click', () => {
     reclaimNameInput.value = '';
     reclaimInput.value = '';
     reclaimError.style.display = 'none';
@@ -434,15 +440,10 @@
     reclaimNameInput.focus();
   });
 
-  // Reclaim modal validation
-  function validateReclaimInputs() {
-    const name = reclaimNameInput.value.trim();
-    const pin = reclaimInput.value.trim();
-    reclaimSubmit.disabled = !(name.length > 0 && pin.length === 4 && /^\d{4}$/.test(pin));
-    reclaimError.style.display = 'none';
-  }
   reclaimNameInput.addEventListener('input', validateReclaimInputs);
+
   reclaimInput.addEventListener('input', validateReclaimInputs);
+  
   reclaimInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !reclaimSubmit.disabled) {
         reclaimSubmit.click();
@@ -460,6 +461,99 @@
       socket.emit('reclaim-identity', { gameCode, playerName: name, pin });
       reclaimModal.classList.remove('open');
     }
+  });
+
+  startGameBtn.addEventListener('click', () => {
+    const creatorToken = localStorage.getItem(creatorKey);
+    if (!creatorToken) { toast('Creator token missing'); return; }
+    socket.emit('start-game', { gameCode, creatorToken });
+  });
+
+  // eliminate flow - typed confirm modal
+  btnEliminate.addEventListener('click', () => {
+    if (role !== 'alive') return;
+    if (eliminateCooldown) return;
+    if (!currentTarget || !currentTask) { toast('No assigned target or task'); return; }
+    confirmSummary.textContent = `You are about to claim the elimination of "${currentTarget.name}" by doing: "${currentTask}". This will send a challenge to them for verification.`;
+    confirmInput.value = '';
+    confirmYes.disabled = true;
+    confirmModal.classList.add('open');
+    confirmInput.focus();
+  });
+
+  confirmInput.addEventListener('input', () => {
+    const typed = confirmInput.value.trim().toLowerCase();
+    const targetName = (currentTarget && currentTarget.name) ? currentTarget.name.trim().toLowerCase() : '';
+    
+    if (typed === '') {
+    confirmYes.disabled = true;
+    confirmError.style.display = 'none';
+    } else if (typed !== targetName) {
+    confirmYes.disabled = true;
+    confirmError.textContent = 'Target name does not match!';
+    confirmError.style.display = 'block';
+    } else {
+    confirmYes.disabled = false;
+    confirmError.style.display = 'none';
+    }
+  });
+
+  confirmInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmYes.disabled) {
+        confirmYes.click();
+    }
+    });
+
+  confirmCancel.addEventListener('click', () => { confirmModal.classList.remove('open'); });
+
+  confirmYes.addEventListener('click', () => {
+    confirmModal.classList.remove('open');
+    eliminateCooldown = true;
+    btnEliminate.disabled = true;
+    cooldownNote.textContent = 'Cooldown...';
+    setTimeout(()=> { eliminateCooldown = false; btnEliminate.disabled = false; cooldownNote.textContent=''; }, 1000);
+
+    const sessionToken = mySession;
+    socket.emit('claim-kill', { sessionToken, session_token: sessionToken, gameCode });
+    toast('Claim sent — waiting for target response');
+  });
+
+  challengeDeny.addEventListener('click', () => {
+    challengeModal.classList.remove('open');
+    if (!pendingKiller) return;
+    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'deny' });
+    pendingKiller = null;
+    toast('You denied the claim');
+  });
+
+  challengeConfirm.addEventListener('click', () => {
+    challengeModal.classList.remove('open');
+    if (!pendingKiller) return;
+    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'confirm' });
+    pendingKiller = null;
+    toast('You confirmed the claim');
+  });
+
+  // Reclaim button in game progress view
+  reclaimInGameBtn.addEventListener('click', () => {
+    reclaimNameInput.value = '';
+    reclaimInput.value = '';
+    reclaimError.style.display = 'none';
+    reclaimSubmit.disabled = true;
+    reclaimModal.classList.add('open');
+    reclaimNameInput.focus();
+  });
+
+  socket.on('connect', () => {
+    connectionStatus.textContent = 'Connected to game';
+    connectionStatus.className = 'connection-status connected';
+    socket.emit('join-game', gameCode);
+    if (mySession) socket.emit('identify', { session_token: mySession, game_id: gameCode });
+  });
+
+  socket.on('disconnect', () => {
+    connectionStatus.textContent = 'Disconnected - trying to reconnect...';
+    connectionStatus.className = 'connection-status disconnected';
   });
 
   // handle server identity responses
@@ -498,21 +592,21 @@
     socket.emit('join-game', gameCode);
   });
 
-    socket.on('session-invalidated', () => {
-      // Clear session and player name from storage
-      mySession = null;
-      myName = null;
-      localStorage.removeItem(sessionKey);
-      localStorage.removeItem(playerNameKey);
-      updateDisplayedName(null);
-      tentativelySelected = null;
-      selectedNameEl.textContent = 'None';
-      confirmIdentityBtn.disabled = true;
-      show(selectionPhase);
-      reclaimIdentityBtn.style.display = 'inline-block';
-      reclaimIdentityBtn.disabled = false;
-      toast('Your session was reclaimed elsewhere. Please select or reclaim your identity.');
-      socket.emit('join-game', gameCode);
+  socket.on('session-invalidated', () => {
+    // Clear session and player name from storage
+    mySession = null;
+    myName = null;
+    localStorage.removeItem(sessionKey);
+    localStorage.removeItem(playerNameKey);
+    updateDisplayedName(null);
+    tentativelySelected = null;
+    selectedNameEl.textContent = 'None';
+    confirmIdentityBtn.disabled = true;
+    show(selectionPhase);
+    reclaimLobbyBtn.style.display = 'inline-block';
+    reclaimLobbyBtn.disabled = false;
+    toast('Your session was reclaimed elsewhere. Please select or reclaim your identity.');
+    socket.emit('join-game', gameCode);
   });
 
   // When server sends player-list-update: render it
@@ -531,7 +625,7 @@
         }
       }
     }
-
+    
     // creator logic for start button — use inline style toggles like original code
     if (isCreator) {
       startGameContainer.style.display = 'block';
@@ -543,14 +637,6 @@
     }
     // If we are dead, show roster in grave
     if (role === 'dead') fillGraveyard(players || []);
-  });
-
-  // creator start
-  if (isCreator) startGameContainer.style.display = 'block';
-  startGameBtn.addEventListener('click', () => {
-    const creatorToken = localStorage.getItem(creatorKey);
-    if (!creatorToken) { toast('Creator token missing'); return; }
-    socket.emit('start-game', { gameCode, creatorToken });
   });
 
   // your assignment private DM
@@ -569,86 +655,11 @@
     socket.emit('join-game', gameCode); // cause lobby update + server DMs
   });
 
-  // eliminate flow - typed confirm modal
-  btnEliminate.addEventListener('click', () => {
-    if (role !== 'alive') return;
-    if (eliminateCooldown) return;
-    if (!currentTarget || !currentTask) { toast('No assigned target or task'); return; }
-    confirmSummary.textContent = `You are about to claim the elimination of "${currentTarget.name}" by doing: "${currentTask}". This will send a challenge to them for verification.`;
-    confirmInput.value = '';
-    confirmYes.disabled = true;
-    confirmModal.classList.add('open');
-    confirmInput.focus();
-  });
-
-    confirmInput.addEventListener('input', () => {
-    const typed = confirmInput.value.trim().toLowerCase();
-    const targetName = (currentTarget && currentTarget.name) ? currentTarget.name.trim().toLowerCase() : '';
-    
-    if (typed === '') {
-    confirmYes.disabled = true;
-    confirmError.style.display = 'none';
-    } else if (typed !== targetName) {
-    confirmYes.disabled = true;
-    confirmError.textContent = 'Target name does not match!';
-    confirmError.style.display = 'block';
-    } else {
-    confirmYes.disabled = false;
-    confirmError.style.display = 'none';
-    }
-    });
-
-    confirmInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !confirmYes.disabled) {
-        confirmYes.click();
-    }
-    });
-
-  confirmCancel.addEventListener('click', () => { confirmModal.classList.remove('open'); });
-
-  confirmYes.addEventListener('click', () => {
-    confirmModal.classList.remove('open');
-    eliminateCooldown = true;
-    btnEliminate.disabled = true;
-    cooldownNote.textContent = 'Cooldown...';
-    setTimeout(()=> { eliminateCooldown = false; btnEliminate.disabled = false; cooldownNote.textContent=''; }, 1000);
-
-    const sessionToken = mySession;
-    socket.emit('claim-kill', { sessionToken, session_token: sessionToken, gameCode });
-    toast('Claim sent — waiting for target response');
-  });
-
   // target challenge modal
   socket.on('kill-challenge', ({ killer_id, killer_name, task }) => {
     pendingKiller = killer_id;
     challengeText.textContent = `${killer_name} claims they eliminated you by making you do: "${task}". Do you confirm?`;
     challengeModal.classList.add('open');
-  });
-
-  challengeDeny.addEventListener('click', () => {
-    challengeModal.classList.remove('open');
-    if (!pendingKiller) return;
-    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'deny' });
-    pendingKiller = null;
-    toast('You denied the claim');
-  });
-
-  challengeConfirm.addEventListener('click', () => {
-    challengeModal.classList.remove('open');
-    if (!pendingKiller) return;
-    socket.emit('resolve-kill', { sessionToken: mySession, session_token: mySession, killer_id: pendingKiller, answer: 'confirm' });
-    pendingKiller = null;
-    toast('You confirmed the claim');
-  });
-
-  // Reclaim button in game progress view
-  reclaimInGameBtn.addEventListener('click', () => {
-    reclaimNameInput.value = '';
-    reclaimInput.value = '';
-    reclaimError.style.display = 'none';
-    reclaimSubmit.disabled = true;
-    reclaimModal.classList.add('open');
-    reclaimNameInput.focus();
   });
 
   socket.on('kill-denied', () => { toast('Your kill was denied.'); });
@@ -706,27 +717,19 @@
     updateViewVisibility();
   });
 
-  function fillGraveyard(players){
-    graveList.innerHTML = '';
-    (players || []).forEach(p => {
-      const li = document.createElement('li');
-      li.className = 'list-item';
-      li.innerHTML = `<div>${escapeHtml(p.name)}</div><div class="pill">${p.status === 'alive' ? '♥ alive' : '☠ eliminated'}</div>`;
-      graveList.appendChild(li);
-    });
-  }
+  updateDisplayedName(localStorage.getItem(playerNameKey));
+
+  // Ensure startGameContainer visible if creator (initial)
+  if (isCreator) startGameContainer.style.display = 'block';
 
   // initial UI
   if (mySession) hide(selectionPhase);
   else {
     show(selectionPhase);
     confirmIdentityBtn.disabled = true;
-    reclaimIdentityBtn.style.display = 'inline-block';
-    reclaimIdentityBtn.disabled = false;
+    reclaimLobbyBtn.style.display = 'inline-block';
+    reclaimLobbyBtn.disabled = false;
   }
-
-  // Ensure startGameContainer visible if creator (initial)
-  if (isCreator) startGameContainer.style.display = 'block';
 })();
 </script>
 </body>
