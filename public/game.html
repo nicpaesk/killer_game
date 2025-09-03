@@ -518,6 +518,20 @@
   // When server sends player-list-update: render it
   socket.on('player-list-update', (players) => {
     renderPlayerList(players || []);
+
+    // Check if we have a session and find our player data
+    if (mySession) {
+      const myPlayer = players.find(p => p.session_token === mySession);
+      if (myPlayer) {
+        // Update our role based on the server's data
+        if (myPlayer.status === 'eliminated') {
+          role = 'dead';
+          updateViewVisibility();
+          fillGraveyard(players || []);
+        }
+      }
+    }
+
     // creator logic for start button — use inline style toggles like original code
     if (isCreator) {
       startGameContainer.style.display = 'block';

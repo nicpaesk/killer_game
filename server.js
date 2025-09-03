@@ -363,7 +363,13 @@ io.on('connection', (socket) => {
         return;
       }
 
-      socket.emit('game-state', game.status);
+      // Check if this socket has a session and notify them of their status
+      if (socket.data && socket.data.sessionToken) {
+        const player = getPlayerBySession.get(socket.data.sessionToken);
+        if (player && player.status === 'eliminated') {
+          socket.emit('you-eliminated');
+        }
+      }
       socket.emit('player-list-update', players);
     } catch (error) {
       console.error('Error in join-game handler:', error);
@@ -429,6 +435,9 @@ io.on('connection', (socket) => {
 
       // Send game state to the client BEFORE player list update
       socket.emit('game-state', game.status);
+      if (game && game.status === 'active' && player.status === 'eliminated') {
+        socket.emit('you-eliminated');
+      }
 
       // Store mapping so we can DM this socket later
       sessionToSocket.set(sessionToken, socket.id);
