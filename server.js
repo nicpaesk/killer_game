@@ -482,10 +482,34 @@ io.on('connection', (socket) => {
 
       console.log(`User ${socket.id} attempting to reclaim identity ${playerName} in game ${gameCode}`);
 
+      // Get game first to check its status
       const game = getGameById.get(gameCode);
       if (!game) {
         socket.emit('error', { message: 'Game not found.' });
         return;
+      }
+
+      // Check if the user already has a session for a DIFFERENT identity
+      if (socket.data && socket.data.sessionToken) {
+        const currentPlayer = getPlayerBySession.get(socket.data.sessionToken);
+        // Only cancel if they're reclaiming a different identity
+        if (currentPlayer && currentPlayer.game_id === gameCode && currentPlayer.name !== playerName) {
+          // Cancel the current identity (only if it's a different player)
+          db.prepare(`
+            UPDATE players
+            SET session_token = NULL
+            WHERE id = ?
+          `).run(currentPlayer.id);
+          
+          // Remove socket mappings for the current session/player
+          sessionToSocket.delete(socket.data.sessionToken);
+          playerToSocket.delete(currentPlayer.id);
+          
+          // Notify the client that their old identity was canceled
+          socket.emit('identity-canceled', {
+            playerName: currentPlayer.name
+          });
+        }
       }
 
       // Find player with matching name and existing PIN
@@ -506,8 +530,9 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Find and notify old session (if any)
-      if (player.session_token && sessionToSocket.has(player.session_token)) {
+      // Find and notify old session (if any) - but only if it's not our current session
+      if (player.session_token && sessionToSocket.has(player.session_token) && 
+          (!socket.data.sessionToken || player.session_token !== socket.data.sessionToken)) {
         const oldSocketId = sessionToSocket.get(player.session_token);
         io.to(oldSocketId).emit('session-invalidated');
         sessionToSocket.delete(player.session_token);
