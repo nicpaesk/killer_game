@@ -228,6 +228,7 @@ app.post('/api/create-game', (req, res) => {
       VALUES (?, ?, ?, ?)
     `);
     insertGame.run(gameCode, creatorToken, 'lobby', JSON.stringify(tasksArray));
+    io.to(gameCode).emit('game-state', 'lobby');
 
     // Insert players
     const insertPlayer = db.prepare(`
@@ -340,6 +341,14 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Check if game is finished and redirect immediately
+      if (game.status === 'finished') {
+        socket.emit('navigate-victory', { gameCode });
+        return;
+      }
+
+      socket.emit('game-state', game.status);
+
       socket.join(gameCode);
 
       const players = db.prepare(`
@@ -354,6 +363,7 @@ io.on('connection', (socket) => {
         return;
       }
 
+      socket.emit('game-state', game.status);
       socket.emit('player-list-update', players);
     } catch (error) {
       console.error('Error in join-game handler:', error);
@@ -381,6 +391,12 @@ io.on('connection', (socket) => {
       }
 
       console.log(`User ${socket.id} claiming identity ${playerName} in game ${gameCode}`);
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
 
       // Check if player exists and is not already claimed
       const player = db.prepare(`
@@ -410,6 +426,9 @@ io.on('connection', (socket) => {
         playerName,
         playerId: player.id
       });
+
+      // Send game state to the client BEFORE player list update
+      socket.emit('game-state', game.status);
 
       // Store mapping so we can DM this socket later
       sessionToSocket.set(sessionToken, socket.id);
@@ -454,6 +473,12 @@ io.on('connection', (socket) => {
 
       console.log(`User ${socket.id} attempting to reclaim identity ${playerName} in game ${gameCode}`);
 
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
       // Find player with matching name and existing PIN
       const player = db.prepare(`
         SELECT * FROM players
@@ -482,9 +507,6 @@ io.on('connection', (socket) => {
       // Generate new session token
       const newSessionToken = crypto.randomBytes(16).toString('hex');
 
-      // Get game status
-      const game = getGameById.get(gameCode);
-
       // If game is still in lobby, set status to 'alive'
       if (game && game.status === 'lobby') {
         db.prepare(`
@@ -507,6 +529,9 @@ io.on('connection', (socket) => {
         playerName: player.name,
         playerId: player.id
       });
+
+      // Send game state to the client BEFORE player list update
+      socket.emit('game-state', game.status);
 
       // Store mapping so we can DM this socket later
       sessionToSocket.set(newSessionToken, socket.id);
@@ -555,6 +580,13 @@ io.on('connection', (socket) => {
 
       console.log(`User ${socket.id} canceling identity in game ${gameCode}`);
 
+       // Get game first to check its status
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
       // Verify the session token exists and belongs to this game
       const player = db.prepare(`
         SELECT * FROM players
@@ -572,6 +604,9 @@ io.on('connection', (socket) => {
         SET status = 'not-joined', session_token = NULL, joined_at = NULL
         WHERE id = ?
       `).run(player.id);
+
+      // Send game state to the client BEFORE player list update
+    socket.emit('game-state', game.status);
 
       // Remove socket mappings for this session/player
       sessionToSocket.delete(sessionToken);
@@ -596,7 +631,6 @@ io.on('connection', (socket) => {
 
       // Broadcast updated player list to all clients in the game room
       io.to(gameCode).emit('player-list-update', updatedPlayers);
-
     } catch (error) {
       console.error('Error canceling identity:', error);
       socket.emit('error', { message: 'Failed to cancel identity' });
@@ -634,6 +668,7 @@ socket.on('start-game', (data = {}) => {
 
     // Prevent restarting
     if (game.status === 'active' || game.status === 'finished') {
+      io.to(gameCode).emit('game-state', 'active');
       io.to(gameCode).emit('game-started');
       return;
     }
@@ -684,6 +719,7 @@ socket.on('start-game', (data = {}) => {
         updatePlayerTargetAndTask.run(targetId, assignedTask, pid);
       }
       setGameStatus.run('active', gameCode);
+      io.to(gameCode).emit('game-state', 'started');
     });
     tx();
 
@@ -906,6 +942,7 @@ socket.on('start-game', (data = {}) => {
       if (aliveNow.length === 1) {
         const winner = aliveNow[0];
         setGameStatus.run('finished', target.game_id);
+        io.to(target.game_id).emit('game-state', 'finished');
         io.to(target.game_id).emit('game-over', {
           winner_id: winner.id,
           winner_name: winner.name

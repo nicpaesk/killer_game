@@ -21,6 +21,10 @@
     .player-status { padding:6px 10px; border-radius:6px; font-size:13px }
     .status-not-joined { background:#fff3f3; color:#7a1f1f }
     .status-alive { background:#e8f8ee; color:#0b662b }
+    .status-dead { background:#f0f0f0; color:#666 }
+    .game-in-progress { text-align: center; padding: 40px 20px; }
+    .game-in-progress h3 { margin-bottom: 16px; color: #333; }
+    .game-in-progress p { margin-bottom: 24px; color: #666; line-height: 1.5; }
     .controls { text-align:center; margin-top:14px }
     .btn { padding:10px 16px; border-radius:8px; border:0; cursor:pointer; font-weight:700 }
     .btn.primary { background:#2563eb; color:#fff }
@@ -53,6 +57,15 @@
     </header>
 
     <div id="connectionStatus" class="connection-status disconnected">Connecting...</div>
+
+    <!-- GAME IN PROGRESS VIEW (for unauthenticated users) -->
+    <div id="viewGameInProgress" class="hidden">
+      <div class="game-in-progress">
+        <h3>Game In Progress</h3>
+        <p>This game has already started. If you were previously playing, you can reclaim your identity to rejoin as a spectator or continue playing.</p>
+        <button id="reclaimInGameBtn" class="btn primary">Reclaim Identity</button>
+      </div>
+    </div>
 
     <!-- SELECTION / LOBBY -->
     <div id="lobbySection">
@@ -166,6 +179,12 @@
 (() => {
   const socket = io();
 
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
+  }
+
   // Get game code
   function getGameCode() {
     const fromQuery = new URLSearchParams(window.location.search).get('gameCode') || new URLSearchParams(window.location.search).get('game');
@@ -231,6 +250,9 @@
   const reclaimCancel = document.getElementById('reclaimCancel');
   const reclaimSubmit = document.getElementById('reclaimSubmit');
 
+  const viewGameInProgress = document.getElementById('viewGameInProgress');
+  const reclaimInGameBtn = document.getElementById('reclaimInGameBtn');
+
   // State
   let tentativelySelected = null;
   let mySession = localStorage.getItem(sessionKey) || null;
@@ -244,6 +266,7 @@
   let currentTask = null;
   let pendingKiller = null;
   let eliminateCooldown = false;
+  let gameStarted = false;
 
   function show(el){ el.classList.remove('hidden'); }
   function hide(el){ el.classList.add('hidden'); }
@@ -264,6 +287,30 @@
   }
   updateDisplayedName(localStorage.getItem(playerNameKey));
 
+  // Show appropriate view based on game state and authentication
+  function updateViewVisibility() {
+    // Reset all views first
+    hide(viewGameInProgress);
+    hide(lobbySection);
+    hide(viewAlive);
+    hide(viewDead);
+    
+    // If game has started and user doesn't have a valid session
+    if (gameStarted && !mySession) {
+      show(viewGameInProgress);
+      return;
+    }
+    
+    // Show appropriate view based on role
+    if (role === 'alive') {
+      show(viewAlive);
+    } else if (role === 'dead') {
+      show(viewDead);
+    } else {
+      show(lobbySection);
+    }
+  }
+
   socket.on('connect', () => {
     connectionStatus.textContent = 'Connected to game';
     connectionStatus.className = 'connection-status connected';
@@ -281,10 +328,10 @@
       playersListEl.innerHTML = '<p>No players found.</p>';
       return;
     }
-
+    updateViewVisibility();
     const html = players.map(p => {
       const isMe = p.session_token && (p.session_token === mySession);
-      const canSelect = p.status === 'not-joined' && !mySession;
+      const canSelect = p.status === 'not-joined' && !mySession && !gameStarted;
       const isTent = tentativelySelected === p.name;
       const statusClass = p.status === 'alive' ? 'status-alive' : 'status-not-joined';
       const statusText = p.status === 'alive' ? 'Joined' : 'Not Joined';
@@ -421,8 +468,8 @@
     myName = data.playerName;
     localStorage.setItem(sessionKey, mySession);
     localStorage.setItem(playerNameKey, myName);
-    updateDisplayedName(myName);               // <-- update visible name
-    hide(selectionPhase);
+    updateDisplayedName(myName);
+    updateViewVisibility();
     toast(`You are now ${myName}`);
     socket.emit('join-game', gameCode);
   });
@@ -433,7 +480,7 @@
     localStorage.setItem(sessionKey, mySession);
     localStorage.setItem(playerNameKey, myName);
     updateDisplayedName(myName);
-    hide(selectionPhase);
+    updateViewVisibility();
     toast(`Identity reclaimed: ${myName}`);
     socket.emit('join-game', gameCode);
   });
@@ -447,7 +494,7 @@
     tentativelySelected = null;
     selectedNameEl.textContent = 'None';
     confirmIdentityBtn.disabled = true;
-    show(selectionPhase);
+    updateViewVisibility();
     socket.emit('join-game', gameCode);
   });
 
@@ -499,12 +546,11 @@
     currentTask = task;
     targetNameEl.textContent = currentTarget ? currentTarget.name : '—';
     taskTextEl.textContent = currentTask || '—';
-    document.getElementById('lobbySection').style.display = 'none';
-    show(viewAlive);
-    hide(viewDead);
+    updateViewVisibility();
   });
 
   socket.on('game-started', () => {
+    gameStarted = true;
     toast('Game started!');
     socket.emit('join-game', gameCode); // cause lobby update + server DMs
   });
@@ -581,6 +627,16 @@
     toast('You confirmed the claim');
   });
 
+  // Reclaim button in game progress view
+  reclaimInGameBtn.addEventListener('click', () => {
+    reclaimNameInput.value = '';
+    reclaimInput.value = '';
+    reclaimError.style.display = 'none';
+    reclaimSubmit.disabled = true;
+    reclaimModal.classList.add('open');
+    reclaimNameInput.focus();
+  });
+
   socket.on('kill-denied', () => { toast('Your kill was denied.'); });
 
   socket.on('player-eliminated', ({ name, id }) => {
@@ -592,8 +648,7 @@
 
   socket.on('you-eliminated', () => {
     role = 'dead';
-    hide(viewAlive);
-    show(viewDead);
+    updateViewVisibility();
     socket.emit('join-game', gameCode);
   });
 
@@ -615,6 +670,28 @@
     window.location.href = `/victory.html?gameCode=${gameCode}`;
   });
 
+  // Track game state from server events
+  socket.on('game-state', (state) => {
+      // Redirect to victory page if game is finished
+    if (state === 'finished') {
+      window.location.href = `/victory.html?gameCode=${gameCode}`;
+      return;
+    }
+    if ( state === 'active')
+      gameStarted = state === 'active';
+    updateViewVisibility();
+  });
+
+  socket.on('game-created', () => {
+    gameStarted = false;
+    updateViewVisibility();
+  });
+
+  socket.on('game-ended', () => {
+    gameStarted = false;
+    updateViewVisibility();
+  });
+
   function fillGraveyard(players){
     graveList.innerHTML = '';
     (players || []).forEach(p => {
@@ -623,11 +700,6 @@
       li.innerHTML = `<div>${escapeHtml(p.name)}</div><div class="pill">${p.status === 'alive' ? '♥ alive' : '☠ eliminated'}</div>`;
       graveList.appendChild(li);
     });
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[s]));
   }
 
   // initial UI
