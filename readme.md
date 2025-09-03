@@ -465,6 +465,11 @@ This approach keeps Sprint 2 focused on the essential gameplay while incorporati
 
 </div>
 
+Additional tasks done:
+
+- adding a victory page
+- adding a pin based profile recovery for the players that lose their session
+
 #### Conclusion
 
 ChatGpt got lost very quickly when given all the code files. I found it's responses not so relevant and very often wrong.
