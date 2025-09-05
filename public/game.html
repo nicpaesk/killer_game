@@ -819,8 +819,8 @@
         <div class="admin-player-item">
           <div class="admin-player-info">
             <div>${escapeHtml(player.name)}</div>
-            <div class="${statusClass}">${statusText}</div>
-            ${detailsHtml}
+             ${showDetails ? `<div class="${statusClass}">${statusText}</div>` : ''}
+          ${detailsHtml}
           </div>
           <div class="admin-player-actions">
             <button class="btn ghost admin-action-btn" data-player-id="${player.id}" data-player-name="${escapeHtml(player.name)}">
