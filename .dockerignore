@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+test
+*.test.js
+coverage
+database.db
+python_emergency_script
+server_run.log
+.DS_Store
+

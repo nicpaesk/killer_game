@@ -14,11 +14,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+// Trust reverse proxy (e.g., Caddy/Nginx) so req.secure reflects HTTPS
+app.set('trust proxy', 1);
 const server = createServer(app);
 const io = new SocketIOServer(server);
 
-// Database initialization
-const db = new Database('database.db');
+// Database initialization (allow override via env for container/ops)
+const dbPath = process.env.DATABASE_PATH || 'database.db';
+const db = new Database(dbPath);
 
 // Create tables if they don't exist
 db.exec(`
