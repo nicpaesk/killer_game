@@ -540,3 +540,55 @@ The task is complete when the game is visually polished, provides clear feedback
 **your response must be to ask me to provide you the existing code for the server and the html files so that you can work from them after**
 
 </div>
+
+### **Sprint 4: Admin panel**
+
+#### Prompt
+
+<div  class="ai-response">
+
+**AI Prompt: Implement Secure, Spoiler-Aware Admin Panel**
+
+**Role:** You are a careful and meticulous software integrator. Your task is to add an administrative control panel to the "Killer" game. Your paramount directive is to **make the absolute minimal number of changes** required. Your new code must be perfectly consistent with the style and patterns of the existing codebase.
+
+**Core Principle: First, Do No Harm.**
+You are not refactoring. You are not improving unrelated code. You are grafting a new, secure feature onto a stable codebase with the lightest touch possible. You will not write a single line of code until you have thoroughly analyzed the provided files.
+
+**The New Feature: A Creator Admin Panel**
+Create a separate, secure **Admin Panel** that allows the game's creator to manage the game state. The creator may or may not be a player. The panel must provide these actions:
+
+1.  **Reset Player PIN**
+2.  **Manual Player Elimination** (counts as a kill for the assassin)
+3.  **Player Leaves Game** (does **not** count as a kill, new status: `left`)
+4.  **End Game Immediately** (all remaining players win)
+5.  **Cancel & Delete Game**
+
+**Critical Non-Technical Requirements:**
+
+1.  **Spoiler Avoidance:** The design of the admin panel must prioritize keeping the game's secrets for an admin who is also a player.
+
+    - **Primary Design:** The interface should be built around **player lists and action dropdowns** that do not automatically reveal relationships (like who is targeting whom) or tasks.
+    - **Information on Demand:** Spoiler information (like a player's task or target) should be **hidden by default** and only revealed through a explicit user action (e.g., clicking a "Show Details" button next to a player's name). This allows an admin-player to avoid spoilers but allows a non-player admin to access the full picture if needed for arbitration.
+
+2.  **Minimal & Consistent Changes:**
+    - You must **re-use existing functions** from the codebase wherever possible (e.g., the function that handles a kill during normal gameplay should be called by the `admin-manual-kill` event handler, not rewritten).
+    - You must **wait for the user to provide all necessary files** before proposing any plan or code.
+    - Your changes must be surgical and focused only on enabling this new feature. The behavior for all existing players and gameplay must remain **identical**.
+
+**Your Process is NON-NEGOTIABLE:**
+
+1.  **WAIT:** Your first response must be to acknowledge these instructions and ask the user for the necessary files.
+2.  **ANALYZE:** Once you receive the files, you will analyze them to understand the existing patterns for:
+    - Database schema and queries.
+    - Socket.IO event handling and security patterns.
+    - How game state changes are broadcast to players.
+    - The functions that handle kills, task reassignment, and game end.
+3.  **PLAN:** You will outline a precise plan, specifying exactly which existing functions you will re-use and which files need minimal changes.
+4.  **IMPLEMENT:** Finally, you will provide the code, ensuring it blends seamlessly with the existing codebase.
+
+**Please request the following files from the user:**
+`server.js`, `package.json`, `public/game.html`, `public/victory.html`, and any other files you deem critical for understanding the current application state and logic.
+
+**Do not proceed until you have received and analyzed these files. Your first response must only be to request them.**
+
+</div>
