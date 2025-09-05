@@ -93,6 +93,12 @@ const setGameStatus = db.prepare(`UPDATE games SET status = ? WHERE id = ?`);
 const setPlayerStatus = db.prepare(`UPDATE players SET status = ? WHERE id = ?`);
 const setPlayerTargetOnly = db.prepare(`UPDATE players SET target_id = ? WHERE id = ?`);
 const setPlayerTaskOnly = db.prepare(`UPDATE players SET task = ? WHERE id = ?`);
+// admin management
+const deleteGame = db.prepare(`DELETE FROM games WHERE id = ?`);
+const deleteGamePlayers = db.prepare(`DELETE FROM players WHERE game_id = ?`);
+const deleteGameKillHistory = db.prepare(`DELETE FROM kill_history WHERE game_id = ?`);
+const updatePlayerPin = db.prepare(`UPDATE players SET pin_code = ? WHERE id = ?`);
+const getGameByCreator = db.prepare(`SELECT * FROM games WHERE creator_session = ?`);
 
 // ----------------------------
 // Utility helpers
@@ -366,8 +372,18 @@ io.on('connection', (socket) => {
       // Check if this socket has a session and notify them of their status
       if (socket.data && socket.data.sessionToken) {
         const player = getPlayerBySession.get(socket.data.sessionToken);
-        if (player && player.status === 'eliminated') {
-          socket.emit('you-eliminated');
+        if (player) {
+          // Send the appropriate game state based on player status
+          if (player.status === 'eliminated' || player.status === 'left') {
+            socket.emit('you-eliminated');
+          } else if (player.status === 'alive' && game.status === 'active') {
+            // Send the player's current assignment
+            const target = player.target_id ? getPlayerById.get(player.target_id) : null;
+            socket.emit('your-assignment', {
+              target: target ? { id: target.id, name: target.name } : null,
+              task: player.task || null
+            });
+          }
         }
       }
       socket.emit('player-list-update', players);
@@ -674,323 +690,323 @@ io.on('connection', (socket) => {
   // -------------------------
   // SPRINT 2: Start Game
   // -------------------------
-socket.on('start-game', (data = {}) => {
-  try {
-    const { gameCode, creatorToken } = data;
-
-    // 🔒 Input validation
-    if (!validateGameCode(gameCode)) {
-      socket.emit('error', { message: 'Invalid game code.' });
-      return;
-    }
-    if (!creatorToken || typeof creatorToken !== 'string') {
-      socket.emit('error', { message: 'Invalid creator token.' });
-      return;
-    }
-
-    const game = getGameById.get(gameCode);
-    if (!game) {
-      socket.emit('error', { message: 'Game not found.' });
-      return;
-    }
-
-    // Validate creator
-    if (game.creator_session !== creatorToken) {
-      socket.emit('error', { message: 'Only the creator can start the game.' });
-      return;
-    }
-
-    // Prevent restarting
-    if (game.status === 'active' || game.status === 'finished') {
-      io.to(gameCode).emit('game-state', 'active');
-      io.to(gameCode).emit('game-started');
-      return;
-    }
-
-    // Ensure enough players
-    const alive = listAlivePlayers.all(gameCode);
-    if (alive.length < 2) {
-      socket.emit('error', { message: 'Need at least 2 players to start.' });
-      return;
-    }
-
-    // Parse task pool
-    let tasks;
+  socket.on('start-game', (data = {}) => {
     try {
-      tasks = Array.isArray(JSON.parse(game.task_pool)) ? JSON.parse(game.task_pool) : [];
-    } catch {
-      tasks = [];
-    }
-    if (!tasks || tasks.length === 0) tasks = DEFAULT_TASKS;
+      const { gameCode, creatorToken } = data;
 
-    // Create derangement (targets) + assign tasks
-    const ids = alive.map(p => p.id);
-    const shuffled = shuffleArray(ids);
-
-    let tasksToAssign = [];
-    const numPlayers = shuffled.length;
-    const poolSize = tasks.length;
-
-    if (poolSize >= numPlayers) {
-      const shuffledTasks = shuffleArray(tasks);
-      tasksToAssign = shuffledTasks.slice(0, numPlayers);
-    } else {
-      const shuffledTasks = shuffleArray(tasks);
-      tasksToAssign = [...shuffledTasks];
-      while (tasksToAssign.length < numPlayers) {
-        const pick = tasks[Math.floor(Math.random() * poolSize)];
-        tasksToAssign.push(pick);
+      // 🔒 Input validation
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
       }
-      tasksToAssign = shuffleArray(tasksToAssign);
-    }
-
-    // Transaction: assign target+task, update status
-    const tx = db.transaction(() => {
-      for (let i = 0; i < shuffled.length; i++) {
-        const pid = shuffled[i];
-        const targetId = shuffled[(i + 1) % shuffled.length];
-        const assignedTask = tasksToAssign[i];
-        updatePlayerTargetAndTask.run(targetId, assignedTask, pid);
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
       }
-      setGameStatus.run('active', gameCode);
-      io.to(gameCode).emit('game-state', 'started');
-    });
-    tx();
 
-    // Broadcast game start
-    io.to(gameCode).emit('game-started');
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
 
-    // DM each player with private assignment
-    const updatedAlive = listAlivePlayers.all(gameCode);
-    for (const p of updatedAlive) {
-      const sockId = playerToSocket.get(p.id);
-      if (!sockId) continue;
-      const target = p.target_id ? getPlayerById.get(p.target_id) : null;
-      io.to(sockId).emit('your-assignment', {
-        target: target ? { id: target.id, name: target.name } : null,
-        task: p.task || null
+      // Validate creator
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Only the creator can start the game.' });
+        return;
+      }
+
+      // Prevent restarting
+      if (game.status === 'active' || game.status === 'finished') {
+        io.to(gameCode).emit('game-state', 'active');
+        io.to(gameCode).emit('game-started');
+        return;
+      }
+
+      // Ensure enough players
+      const alive = listAlivePlayers.all(gameCode);
+      if (alive.length < 2) {
+        socket.emit('error', { message: 'Need at least 2 players to start.' });
+        return;
+      }
+
+      // Parse task pool
+      let tasks;
+      try {
+        tasks = Array.isArray(JSON.parse(game.task_pool)) ? JSON.parse(game.task_pool) : [];
+      } catch {
+        tasks = [];
+      }
+      if (!tasks || tasks.length === 0) tasks = DEFAULT_TASKS;
+
+      // Create derangement (targets) + assign tasks
+      const ids = alive.map(p => p.id);
+      const shuffled = shuffleArray(ids);
+
+      let tasksToAssign = [];
+      const numPlayers = shuffled.length;
+      const poolSize = tasks.length;
+
+      if (poolSize >= numPlayers) {
+        const shuffledTasks = shuffleArray(tasks);
+        tasksToAssign = shuffledTasks.slice(0, numPlayers);
+      } else {
+        const shuffledTasks = shuffleArray(tasks);
+        tasksToAssign = [...shuffledTasks];
+        while (tasksToAssign.length < numPlayers) {
+          const pick = tasks[Math.floor(Math.random() * poolSize)];
+          tasksToAssign.push(pick);
+        }
+        tasksToAssign = shuffleArray(tasksToAssign);
+      }
+
+      // Transaction: assign target+task, update status
+      const tx = db.transaction(() => {
+        for (let i = 0; i < shuffled.length; i++) {
+          const pid = shuffled[i];
+          const targetId = shuffled[(i + 1) % shuffled.length];
+          const assignedTask = tasksToAssign[i];
+          updatePlayerTargetAndTask.run(targetId, assignedTask, pid);
+        }
+        setGameStatus.run('active', gameCode);
+        io.to(gameCode).emit('game-state', 'started');
       });
+      tx();
+
+      // Broadcast game start
+      io.to(gameCode).emit('game-started');
+
+      // DM each player with private assignment
+      const updatedAlive = listAlivePlayers.all(gameCode);
+      for (const p of updatedAlive) {
+        const sockId = playerToSocket.get(p.id);
+        if (!sockId) continue;
+        const target = p.target_id ? getPlayerById.get(p.target_id) : null;
+        io.to(sockId).emit('your-assignment', {
+          target: target ? { id: target.id, name: target.name } : null,
+          task: p.task || null
+        });
+      }
+    } catch (err) {
+      console.error('start-game error:', err);
+      socket.emit('error', { message: 'Failed to start game.' });
     }
-  } catch (err) {
-    console.error('start-game error:', err);
-    socket.emit('error', { message: 'Failed to start game.' });
-  }
-});
+  });
 
 
   // -------------------------
   // SPRINT 2: Claim Kill (killer -> asks server to challenge target)
   // -------------------------
   socket.on('claim-kill', (data = {}) => {
-  try {
-    const sessionToken = (data.sessionToken || data.session_token);
-    const gameCode = (data.gameCode || data.game_code);
+    try {
+      const sessionToken = (data.sessionToken || data.session_token);
+      const gameCode = (data.gameCode || data.game_code);
 
-    // 🔒 Input validation
-    if (!validateGameCode(gameCode)) {
-      socket.emit('error', { message: 'Invalid game code.' });
-      return;
-    }
-    if (!sessionToken || typeof sessionToken !== 'string') {
-      socket.emit('error', { message: 'Missing session token.' });
-      return;
-    }
+      // 🔒 Input validation
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!sessionToken || typeof sessionToken !== 'string') {
+        socket.emit('error', { message: 'Missing session token.' });
+        return;
+      }
 
-    // ensure game is active
-    const game = getGameById.get(gameCode);
-    if (!game || game.status !== 'active') {
-      socket.emit('error', { message: 'Game not active.' });
-      return;
-    }
+      // ensure game is active
+      const game = getGameById.get(gameCode);
+      if (!game || game.status !== 'active') {
+        socket.emit('error', { message: 'Game not active.' });
+        return;
+      }
 
-    const killer = getPlayerBySession.get(sessionToken);
-    if (!killer) {
-      socket.emit('error', { message: 'Invalid session.' });
-      return;
-    }
-    if (killer.game_id !== gameCode) {
-      socket.emit('error', { message: 'Session does not belong to this game.' });
-      return;
-    }
-    if (killer.status !== 'alive') {
-      socket.emit('error', { message: 'Eliminated players cannot claim kills.' });
-      return;
-    }
-    if (!killer.target_id) {
-      socket.emit('error', { message: 'You have no target.' });
-      return;
-    }
-    // ensure a task exists for this killer
-    if (!killer.task || typeof killer.task !== 'string') {
-      socket.emit('error', { message: 'No task assigned to you.' });
-      return;
-    }
+      const killer = getPlayerBySession.get(sessionToken);
+      if (!killer) {
+        socket.emit('error', { message: 'Invalid session.' });
+        return;
+      }
+      if (killer.game_id !== gameCode) {
+        socket.emit('error', { message: 'Session does not belong to this game.' });
+        return;
+      }
+      if (killer.status !== 'alive') {
+        socket.emit('error', { message: 'Eliminated players cannot claim kills.' });
+        return;
+      }
+      if (!killer.target_id) {
+        socket.emit('error', { message: 'You have no target.' });
+        return;
+      }
+      // ensure a task exists for this killer
+      if (!killer.task || typeof killer.task !== 'string') {
+        socket.emit('error', { message: 'No task assigned to you.' });
+        return;
+      }
 
-    const target = getPlayerById.get(killer.target_id);
-    if (!target) {
-      socket.emit('error', { message: 'Target not found.' });
-      return;
-    }
-    if (target.status !== 'alive') {
-      socket.emit('error', { message: 'Target is already eliminated.' });
-      return;
-    }
+      const target = getPlayerById.get(killer.target_id);
+      if (!target) {
+        socket.emit('error', { message: 'Target not found.' });
+        return;
+      }
+      if (target.status !== 'alive') {
+        socket.emit('error', { message: 'Target is already eliminated.' });
+        return;
+      }
 
-    const targetSocketId = playerToSocket.get(target.id);
-    if (!targetSocketId) {
-      socket.emit('error', { message: 'Target is offline. Try again later.' });
-      return;
+      const targetSocketId = playerToSocket.get(target.id);
+      if (!targetSocketId) {
+        socket.emit('error', { message: 'Target is offline. Try again later.' });
+        return;
+      }
+
+      // Send challenge only to target
+      io.to(targetSocketId).emit('kill-challenge', {
+        killer_id: killer.id,
+        killer_name: killer.name,
+        task: killer.task
+      });
+
+    } catch (err) {
+      console.error('claim-kill error:', err);
+      socket.emit('error', { message: 'Claim-kill failed.' });
     }
-
-    // Send challenge only to target
-    io.to(targetSocketId).emit('kill-challenge', {
-      killer_id: killer.id,
-      killer_name: killer.name,
-      task: killer.task
-    });
-
-  } catch (err) {
-    console.error('claim-kill error:', err);
-    socket.emit('error', { message: 'Claim-kill failed.' });
-  }
-});
+  });
 
 
   // -------------------------
   // SPRINT 2: Resolve Kill (target confirms or denies)
   // -------------------------
-  socket.on('resolve-kill', (data) => {
-    try {
-      // Basic payload sanity check (non-breaking): keep original behavior/messages
-      if (!data || typeof data !== 'object') {
-        socket.emit('error', { message: 'Missing session token.' });
-        return;
-      }
-
-      const sessionToken = (data && (data.sessionToken || data.session_token));
-      const killer_id = data && (data.killer_id || data.killerId);
-      const answer = data && data.answer;
-
-      // Validate session token type (consistent error message)
-      if (typeof sessionToken !== 'string' || sessionToken.trim() === '') {
-        socket.emit('error', { message: 'Missing session token.' });
-        return;
-      }
-
-      const target = getPlayerBySession.get(sessionToken);
-      if (!target) {
-        socket.emit('error', { message: 'Invalid session.' });
-        return;
-      }
-      if (target.status !== 'alive') {
-        socket.emit('error', { message: 'Only alive targets can resolve a kill.' });
-        return;
-      }
-
-      // Validate killer_id presence/type; preserve original error message
-      if (typeof killer_id !== 'string' || killer_id.trim() === '') {
-        socket.emit('error', { message: 'Killer not found.' });
-        return;
-      }
-      const killer = getPlayerById.get(killer_id);
-      if (!killer) {
-        socket.emit('error', { message: 'Killer not found.' });
-        return;
-      }
-      if (killer.status !== 'alive') {
-        socket.emit('error', { message: 'Killer is no longer alive.' });
-        return;
-      }
-      if (killer.target_id !== target.id) {
-        socket.emit('error', { message: 'You are not their current target.' });
-        return;
-      }
-
-      const killerSocketId = playerToSocket.get(killer.id);
-
-      // Treat any non-'confirm' answer as denial (unchanged behavior)
-      if (String(answer).toLowerCase() !== 'confirm') {
-        // Denied -> notify killer only
-        if (killerSocketId) {
-          io.to(killerSocketId).emit('kill-denied');
+    socket.on('resolve-kill', (data) => {
+      try {
+        // Basic payload sanity check (non-breaking): keep original behavior/messages
+        if (!data || typeof data !== 'object') {
+          socket.emit('error', { message: 'Missing session token.' });
+          return;
         }
-        return;
-      }
 
-      // Confirmed -> process elimination
-      // Determine new target for killer: usually target.target_id, but if target.target_id === killer.id (2-player-cycle),
-      // then killer gets no target (null) and will be the winner if no other alive players remain.
-      const targetNextId = target.target_id || null;
-      const newTargetForKiller = (targetNextId === killer.id) ? null : targetNextId;
+        const sessionToken = (data && (data.sessionToken || data.session_token));
+        const killer_id = data && (data.killer_id || data.killerId);
+        const answer = data && data.answer;
 
-      const tx = db.transaction(() => {
-        // Mark target eliminated
-        setPlayerStatus.run('eliminated', target.id);
-        // Reassign killer's target
-        setPlayerTargetOnly.run(newTargetForKiller, killer.id);
-        // Transfer task to killer
-        setPlayerTaskOnly.run(target.task || null, killer.id);
+        // Validate session token type (consistent error message)
+        if (typeof sessionToken !== 'string' || sessionToken.trim() === '') {
+          socket.emit('error', { message: 'Missing session token.' });
+          return;
+        }
 
-        // --- NEW: insert into kill history ---
-        const insertKill = db.prepare(`
-          INSERT INTO kill_history (id, game_id, killer_id, victim_id, task)
-          VALUES (?, ?, ?, ?, ?)
-        `);
-        insertKill.run(uuidv4(), target.game_id, killer.id, target.id, target.task || null);
-      });
-      tx();
+        const target = getPlayerBySession.get(sessionToken);
+        if (!target) {
+          socket.emit('error', { message: 'Invalid session.' });
+          return;
+        }
+        if (target.status !== 'alive') {
+          socket.emit('error', { message: 'Only alive targets can resolve a kill.' });
+          return;
+        }
 
-      // Broadcast updated roster to the whole game room so lobby & graveyard update immediately
-      const updatedPlayers = db.prepare(`
-        SELECT id, name, status, session_token, joined_at
-        FROM players
-        WHERE game_id = ?
-        ORDER BY name
-      `).all(target.game_id);
-      io.to(target.game_id).emit('player-list-update', updatedPlayers);
+        // Validate killer_id presence/type; preserve original error message
+        if (typeof killer_id !== 'string' || killer_id.trim() === '') {
+          socket.emit('error', { message: 'Killer not found.' });
+          return;
+        }
+        const killer = getPlayerById.get(killer_id);
+        if (!killer) {
+          socket.emit('error', { message: 'Killer not found.' });
+          return;
+        }
+        if (killer.status !== 'alive') {
+          socket.emit('error', { message: 'Killer is no longer alive.' });
+          return;
+        }
+        if (killer.target_id !== target.id) {
+          socket.emit('error', { message: 'You are not their current target.' });
+          return;
+        }
 
-      // Broadcast elimination to room
-      io.to(target.game_id).emit('player-eliminated', {
-        name: target.name,
-        id: target.id
-      });
+        const killerSocketId = playerToSocket.get(killer.id);
 
-      // Notify eliminated player (so client switches to graveyard)
-      const targetSocketId = playerToSocket.get(target.id);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('you-eliminated');
-      }
+        // Treat any non-'confirm' answer as denial (unchanged behavior)
+        if (String(answer).toLowerCase() !== 'confirm') {
+          // Denied -> notify killer only
+          if (killerSocketId) {
+            io.to(killerSocketId).emit('kill-denied');
+          }
+          return;
+        }
 
-      // Inform killer of new target + task
-      if (killerSocketId) {
-        const updatedKiller = getPlayerById.get(killer.id);
-        const newTarget = updatedKiller.target_id ? getPlayerById.get(updatedKiller.target_id) : null;
-        io.to(killerSocketId).emit('new-target', {
-          target: newTarget ? { id: newTarget.id, name: newTarget.name } : null,
-          task: updatedKiller.task || null
+        // Confirmed -> process elimination
+        // Determine new target for killer: usually target.target_id, but if target.target_id === killer.id (2-player-cycle),
+        // then killer gets no target (null) and will be the winner if no other alive players remain.
+        const targetNextId = target.target_id || null;
+        const newTargetForKiller = (targetNextId === killer.id) ? null : targetNextId;
+
+        const tx = db.transaction(() => {
+          // Mark target eliminated
+          setPlayerStatus.run('eliminated', target.id);
+          // Reassign killer's target
+          setPlayerTargetOnly.run(newTargetForKiller, killer.id);
+          // Transfer task to killer
+          setPlayerTaskOnly.run(target.task || null, killer.id);
+
+          // --- NEW: insert into kill history ---
+          const insertKill = db.prepare(`
+            INSERT INTO kill_history (id, game_id, killer_id, victim_id, task)
+            VALUES (?, ?, ?, ?, ?)
+          `);
+          insertKill.run(uuidv4(), target.game_id, killer.id, target.id, target.task || null);
         });
-      }
+        tx();
 
-      // Check for game over: only one alive left
-      const aliveNow = listAlivePlayers.all(target.game_id);
-      if (aliveNow.length === 1) {
-        const winner = aliveNow[0];
-        setGameStatus.run('finished', target.game_id);
-        io.to(target.game_id).emit('game-state', 'finished');
-        io.to(target.game_id).emit('game-over', {
-          winner_id: winner.id,
-          winner_name: winner.name
+        // Broadcast updated roster to the whole game room so lobby & graveyard update immediately
+        const updatedPlayers = db.prepare(`
+          SELECT id, name, status, session_token, joined_at
+          FROM players
+          WHERE game_id = ?
+          ORDER BY name
+        `).all(target.game_id);
+        io.to(target.game_id).emit('player-list-update', updatedPlayers);
+
+        // Broadcast elimination to room
+        io.to(target.game_id).emit('player-eliminated', {
+          name: target.name,
+          id: target.id
         });
 
-        // --- NEW: instruct clients to navigate to victory page ---
-        io.to(target.game_id).emit('navigate-victory', { gameCode: target.game_id });
-      }
+        // Notify eliminated player (so client switches to graveyard)
+        const targetSocketId = playerToSocket.get(target.id);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit('you-eliminated');
+        }
 
-    } catch (error) {
-      console.error('resolve-kill error:', error);
-      socket.emit('error', { message: 'Resolve-kill failed.' });
-    }
-  });
+        // Inform killer of new target + task
+        if (killerSocketId) {
+          const updatedKiller = getPlayerById.get(killer.id);
+          const newTarget = updatedKiller.target_id ? getPlayerById.get(updatedKiller.target_id) : null;
+          io.to(killerSocketId).emit('new-target', {
+            target: newTarget ? { id: newTarget.id, name: newTarget.name } : null,
+            task: updatedKiller.task || null
+          });
+        }
+
+        // Check for game over: only one alive left
+        const aliveNow = listAlivePlayers.all(target.game_id);
+        if (aliveNow.length === 1) {
+          const winner = aliveNow[0];
+          setGameStatus.run('finished', target.game_id);
+          io.to(target.game_id).emit('game-state', 'finished');
+          io.to(target.game_id).emit('game-over', {
+            winner_id: winner.id,
+            winner_name: winner.name
+          });
+
+          // --- NEW: instruct clients to navigate to victory page ---
+          io.to(target.game_id).emit('navigate-victory', { gameCode: target.game_id });
+        }
+
+      } catch (error) {
+        console.error('resolve-kill error:', error);
+        socket.emit('error', { message: 'Resolve-kill failed.' });
+      }
+    });
 
 
   socket.on('disconnect', () => {
@@ -1004,7 +1020,476 @@ socket.on('start-game', (data = {}) => {
     }
   });
 
+// ----------------------------
+// admin management
+// ----------------------------
+
+  socket.on('admin-get-players', (data = {}) => {
+    try {
+      const { gameCode, creatorToken, showDetails = false } = data;
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      // Validate creator
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      const players = db.prepare(`
+        SELECT id, name, status, session_token, joined_at, 
+              ${showDetails ? 'target_id, task, pin_code IS NOT NULL as has_pin' : 'NULL as target_id, NULL as task, pin_code IS NOT NULL as has_pin'}
+        FROM players 
+        WHERE game_id = ? 
+        ORDER BY name
+      `).all(gameCode);
+
+      // For spoiler protection, don't reveal target names unless showDetails is true
+      const processedPlayers = players.map(player => {
+        const result = {
+          id: player.id,
+          name: player.name,
+          status: player.status,
+          joined_at: player.joined_at,
+          has_pin: player.has_pin
+        };
+
+        if (showDetails && player.target_id) {
+          const target = getPlayerById.get(player.target_id);
+          result.target_name = target ? target.name : null;
+          result.task = player.task;
+        }
+
+        return result;
+      });
+
+      socket.emit('admin-players-list', {
+        players: processedPlayers,
+        gameStatus: game.status
+      });
+
+    } catch (error) {
+      console.error('Error in admin-get-players:', error);
+      socket.emit('error', { message: 'Failed to get players.' });
+    }
+  });
+
+  socket.on('admin-reset-pin', (data = {}) => {
+    try {
+      const { gameCode, creatorToken, playerId, newPin } = data; // Added newPin parameter
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+      if (!playerId || typeof playerId !== 'string') {
+        socket.emit('error', { message: 'Invalid player ID.' });
+        return;
+      }
+      if (!validatePin(newPin)) { // Validate the new PIN
+        socket.emit('error', { message: 'Invalid PIN. Must be 4 digits.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      const player = getPlayerById.get(playerId);
+      if (!player || player.game_id !== gameCode) {
+        socket.emit('error', { message: 'Player not found.' });
+        return;
+      }
+
+      // Hash the new PIN
+      const hashedPin = crypto.createHash('sha256').update(newPin).digest('hex');
+
+      updatePlayerPin.run(hashedPin, playerId);
+
+      socket.emit('admin-pin-reset', {
+        playerId,
+        success: true
+      });
+
+    } catch (error) {
+      console.error('Error in admin-reset-pin:', error);
+      socket.emit('error', { message: 'Failed to reset PIN.' });
+    }
+  });
+
+  socket.on('admin-manual-kill', (data = {}) => {
+    try {
+      const { gameCode, creatorToken, playerId } = data;
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+      if (!playerId || typeof playerId !== 'string') {
+        socket.emit('error', { message: 'Invalid player ID.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      const player = getPlayerById.get(playerId);
+      if (!player || player.game_id !== gameCode) {
+        socket.emit('error', { message: 'Player not found.' });
+        return;
+      }
+
+      if (player.status !== 'alive') {
+        socket.emit('error', { message: 'Player is not alive.' });
+        return;
+      }
+
+      // Find the assassin (player who has this player as target)
+      const assassin = db.prepare(`SELECT * FROM players WHERE target_id = ? AND status = 'alive'`).get(playerId);
+      if (!assassin) {
+        socket.emit('error', { message: 'No assassin found for this target.' });
+        return;
+      }
+
+      // Use the existing kill resolution logic by emitting a fake resolve-kill event
+      const fakeSocket = {
+        emit: (event, data) => {
+          if (event === 'error') {
+            socket.emit('error', data);
+          }
+        }
+      };
+
+      // Simulate the target confirming the kill
+      const resolveData = {
+        sessionToken: player.session_token,
+        killer_id: assassin.id,
+        answer: 'confirm'
+      };
+
+      // Reuse the existing resolve-kill logic
+      socket.resolveKillHandler(resolveData, fakeSocket);
+
+      socket.emit('admin-manual-kill-success', { playerId });
+
+    } catch (error) {
+      console.error('Error in admin-manual-kill:', error);
+      socket.emit('error', { message: 'Failed to process manual kill.' });
+    }
+  });
+
+  // Add this helper function to handle the resolve-kill logic
+  const resolveKillHandler = (data, socket) => {
+    // This is the same logic as the resolve-kill event handler
+    try {
+      const sessionToken = data.sessionToken;
+      const killer_id = data.killer_id;
+      const answer = data.answer;
+
+      const target = getPlayerBySession.get(sessionToken);
+      if (!target) {
+        socket.emit('error', { message: 'Invalid session.' });
+        return;
+      }
+
+      const killer = getPlayerById.get(killer_id);
+      if (!killer) {
+        socket.emit('error', { message: 'Killer not found.' });
+        return;
+      }
+
+      if (killer.target_id !== target.id) {
+        socket.emit('error', { message: 'You are not their current target.' });
+        return;
+      }
+
+      if (String(answer).toLowerCase() !== 'confirm') {
+        return;
+      }
+
+      const targetNextId = target.target_id || null;
+      const newTargetForKiller = (targetNextId === killer.id) ? null : targetNextId;
+
+      const tx = db.transaction(() => {
+        setPlayerStatus.run('eliminated', target.id);
+        setPlayerTargetOnly.run(newTargetForKiller, killer.id);
+        setPlayerTaskOnly.run(target.task || null, killer.id);
+
+        const insertKill = db.prepare(`
+          INSERT INTO kill_history (id, game_id, killer_id, victim_id, task)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        insertKill.run(uuidv4(), target.game_id, killer.id, target.id, target.task || null);
+      });
+      tx();
+
+      const updatedPlayers = db.prepare(`
+        SELECT id, name, status, session_token, joined_at
+        FROM players
+        WHERE game_id = ?
+        ORDER BY name
+      `).all(target.game_id);
+      io.to(target.game_id).emit('player-list-update', updatedPlayers);
+
+      io.to(target.game_id).emit('player-eliminated', {
+        name: target.name,
+        id: target.id
+      });
+
+      const targetSocketId = playerToSocket.get(target.id);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('you-eliminated');
+      }
+
+      const killerSocketId = playerToSocket.get(killer.id);
+      if (killerSocketId) {
+        const updatedKiller = getPlayerById.get(killer.id);
+        const newTarget = updatedKiller.target_id ? getPlayerById.get(updatedKiller.target_id) : null;
+        io.to(killerSocketId).emit('new-target', {
+          target: newTarget ? { id: newTarget.id, name: newTarget.name } : null,
+          task: updatedKiller.task || null
+        });
+      }
+
+      const aliveNow = listAlivePlayers.all(target.game_id);
+      if (aliveNow.length === 1) {
+        const winner = aliveNow[0];
+        setGameStatus.run('finished', target.game_id);
+        io.to(target.game_id).emit('game-state', 'finished');
+        io.to(target.game_id).emit('game-over', {
+          winner_id: winner.id,
+          winner_name: winner.name
+        });
+        io.to(target.game_id).emit('navigate-victory', { gameCode: target.game_id });
+      }
+
+    } catch (error) {
+      console.error('resolve-kill error:', error);
+      socket.emit('error', { message: 'Resolve-kill failed.' });
+    }
+  };
+
+  // Add this to the socket connection handler to make the function available
+  socket.resolveKillHandler = resolveKillHandler;
+
+  // Update the admin-player-leave event handler to handle target reassignment
+  socket.on('admin-player-leave', (data = {}) => {
+    try {
+      const { gameCode, creatorToken, playerId } = data;
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+      if (!playerId || typeof playerId !== 'string') {
+        socket.emit('error', { message: 'Invalid player ID.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      const player = getPlayerById.get(playerId);
+      if (!player || player.game_id !== gameCode) {
+        socket.emit('error', { message: 'Player not found.' });
+        return;
+      }
+
+      if (player.status !== 'alive') {
+        socket.emit('error', { message: 'Player is not alive.' });
+        return;
+      }
+
+      // Find the assassin (player who has this player as target)
+      const assassin = db.prepare(`SELECT * FROM players WHERE target_id = ? AND status = 'alive'`).get(playerId);
+      
+      // Set status to 'left' and invalidate session
+      const tx = db.transaction(() => {
+        setPlayerStatus.run('left', playerId);
+        // Invalidate session by setting session_token to NULL
+        db.prepare(`UPDATE players SET session_token = NULL WHERE id = ?`).run(playerId);
+        
+        // If there was an assassin targeting this player, assign them the leaving player's target and task
+        if (assassin) {
+          // Get the target of the leaving player
+          const newTargetId = player.target_id;
+          const newTask = player.task;
+          
+          // Update the assassin's target and task
+          updatePlayerTargetAndTask.run(newTargetId, newTask, assassin.id);
+        }
+      });
+      tx();
+
+      // Notify the player's socket to invalidate their session (if connected)
+      if (player.session_token) {
+        const oldSocketId = sessionToSocket.get(player.session_token);
+        if (oldSocketId) {
+          io.to(oldSocketId).emit('session-invalidated');
+          sessionToSocket.delete(player.session_token);
+        }
+        playerToSocket.delete(playerId);
+      }
+
+      // Broadcast updated player list
+      const updatedPlayers = db.prepare(`
+        SELECT id, name, status, session_token, joined_at
+        FROM players
+        WHERE game_id = ?
+        ORDER BY name
+      `).all(gameCode);
+      io.to(gameCode).emit('player-list-update', updatedPlayers);
+
+      // If there was an assassin, notify them of their new target and task
+      if (assassin) {
+        const assassinSocketId = playerToSocket.get(assassin.id);
+        if (assassinSocketId) {
+          const newTarget = player.target_id ? getPlayerById.get(player.target_id) : null;
+          io.to(assassinSocketId).emit('new-target', {
+            target: newTarget ? { id: newTarget.id, name: newTarget.name } : null,
+            task: player.task || null
+          });
+        }
+      }
+
+      socket.emit('admin-player-leave-success', { playerId });
+
+    } catch (error) {
+      console.error('Error in admin-player-leave:', error);
+      socket.emit('error', { message: 'Failed to process player leave.' });
+    }
+  });
+
+  socket.on('admin-end-game', (data = {}) => {
+    try {
+      const { gameCode, creatorToken } = data;
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      // End the game immediately
+      setGameStatus.run('finished', gameCode);
+      io.to(gameCode).emit('game-state', 'finished');
+      io.to(gameCode).emit('game-over', {
+        winner_id: null,
+        winner_name: 'All remaining players win!'
+      });
+      io.to(gameCode).emit('navigate-victory', { gameCode });
+
+      socket.emit('admin-end-game-success');
+
+    } catch (error) {
+      console.error('Error in admin-end-game:', error);
+      socket.emit('error', { message: 'Failed to end game.' });
+    }
+  });
+
+  socket.on('admin-delete-game', (data = {}) => {
+    try {
+      const { gameCode, creatorToken } = data;
+
+      if (!validateGameCode(gameCode)) {
+        socket.emit('error', { message: 'Invalid game code.' });
+        return;
+      }
+      if (!creatorToken || typeof creatorToken !== 'string') {
+        socket.emit('error', { message: 'Invalid creator token.' });
+        return;
+      }
+
+      const game = getGameById.get(gameCode);
+      if (!game) {
+        socket.emit('error', { message: 'Game not found.' });
+        return;
+      }
+
+      if (game.creator_session !== creatorToken) {
+        socket.emit('error', { message: 'Unauthorized.' });
+        return;
+      }
+
+      // Delete game and all related data in a transaction
+      const tx = db.transaction(() => {
+        deleteGameKillHistory.run(gameCode);
+        deleteGamePlayers.run(gameCode);
+        deleteGame.run(gameCode);
+      });
+      tx();
+
+      socket.emit('admin-delete-game-success');
+
+    } catch (error) {
+      console.error('Error in admin-delete-game:', error);
+      socket.emit('error', { message: 'Failed to delete game.' });
+    }
+  });
 });
+
 
 // ----------------------------
 // Server start

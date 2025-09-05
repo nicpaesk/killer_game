@@ -318,3 +318,50 @@ button:disabled {
         padding-top: 50px;
     }
 }
+
+
+/* ===== Admin ===== */
+
+.admin-panel {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #f9f9f9;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.admin-player-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.admin-player-info {
+  flex: 1;
+}
+
+.admin-player-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.admin-status {
+  font-size: 0.8em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eee;
+}
+
+.status-alive { background: #d4edda; color: #155724; }
+.status-eliminated { background: #f8d7da; color: #721c24; }
+.status-left { background: #fff3cd; color: #856404; }
+.status-not-joined { background: #e2e3e5; color: #383d41; }

@@ -135,6 +135,57 @@
       </div>
     </div>
   </div>
+  <!-- Admin Panel -->
+  <div id="adminPanel" class="hidden admin-panel">
+    <h3>Admin Panel</h3>
+    
+    <div class="admin-actions">
+      <button id="adminRefreshBtn" class="btn ghost">Refresh Players</button>
+      <button id="adminShowDetailsBtn" class="btn ghost">Show Details</button>
+      <button id="adminEndGameBtn" class="btn danger">End Game</button>
+      <button id="adminDeleteGameBtn" class="btn danger">Delete Game</button>
+    </div>
+
+    <div class="players-container">
+      <h4>Players</h4>
+      <div id="adminPlayersList">
+        <p>Loading players...</p>
+      </div>
+    </div>
+
+    <!-- admin: Player Action Modal -->
+    <div id="adminPlayerModal" class="modal-backdrop" role="dialog" aria-modal="true">
+      <div class="modal">
+        <h3 id="adminModalTitle">Player Actions</h3>
+        <p id="adminModalText" class="smallmuted"></p>
+        
+        <div id="adminModalActions" style="margin-top: 12px;">
+          <button id="adminResetPinBtn" class="btn ghost">Reset PIN</button>
+          <button id="adminManualKillBtn" class="btn danger">Manual Elimination</button>
+          <button id="adminPlayerLeaveBtn" class="btn ghost">Mark as Left</button>
+        </div>
+        
+        <div style="text-align: right; margin-top: 12px;">
+          <button id="adminModalClose" class="btn ghost">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- admin: modal for resetting PIN -->
+  <div id="adminResetPinModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Reset PIN for <span id="adminResetPinPlayerName"></span></h3>
+      <p class="smallmuted">Enter a new 4-digit PIN for this player.</p>
+      <div class="field">
+        <input id="adminResetPinInput" type="password" placeholder="Enter new PIN" maxlength="4" autocomplete="off" />
+        <div id="adminResetPinError" class="smallmuted" style="color:red; margin-top:6px; display:none;"></div>
+      </div>
+      <div style="text-align:right; margin-top:8px">
+        <button id="adminResetPinCancel" class="btn ghost">Cancel</button>
+        <button id="adminResetPinConfirm" class="btn primary" disabled>Reset PIN</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (() => {
@@ -508,8 +559,12 @@
   socket.on('connect', () => {
     connectionStatus.textContent = 'Connected to game';
     connectionStatus.className = 'connection-status connected';
+    
+    // Restore session from localStorage if available
+    if (mySession) {
+      socket.data = { sessionToken: mySession };
+    }
     socket.emit('join-game', gameCode);
-    if (mySession) socket.emit('identify', { session_token: mySession, game_id: gameCode });
   });
 
   socket.on('disconnect', () => {
@@ -579,10 +634,14 @@
       const myPlayer = players.find(p => p.session_token === mySession);
       if (myPlayer) {
         // Update our role based on the server's data
-        if (myPlayer.status === 'eliminated') {
+        if (myPlayer.status === 'eliminated' || myPlayer.status === 'left') {
           role = 'dead';
           updateViewVisibility();
           fillGraveyard(players || []);
+        } else if (myPlayer.status === 'alive'&& gameStarted) {
+          role = 'alive';
+          updateViewVisibility();
+          // We'll wait for the your-assignment event to populate target/task
         }
       }
     }
@@ -632,6 +691,14 @@
   }
   });
 
+  socket.on('target-left', (data) => {
+    toast(`Your target (${data.targetName}) has left the game. Waiting for new assignment.`);
+    // Clear the current target
+    currentTarget = null;
+    targetNameEl.textContent = '—';
+    updateViewVisibility();
+  });
+
   socket.on('you-eliminated', () => {
     role = 'dead';
     updateViewVisibility();
@@ -678,19 +745,292 @@
     updateViewVisibility();
   });
 
+
+  // ==== Admin ====
+
+  const adminPanel = document.getElementById('adminPanel');
+  const adminRefreshBtn = document.getElementById('adminRefreshBtn');
+  const adminShowDetailsBtn = document.getElementById('adminShowDetailsBtn');
+  const adminEndGameBtn = document.getElementById('adminEndGameBtn');
+  const adminDeleteGameBtn = document.getElementById('adminDeleteGameBtn');
+  const adminPlayersList = document.getElementById('adminPlayersList');
+  const adminPlayerModal = document.getElementById('adminPlayerModal');
+  const adminModalTitle = document.getElementById('adminModalTitle');
+  const adminModalText = document.getElementById('adminModalText');
+  const adminResetPinBtn = document.getElementById('adminResetPinBtn');
+  const adminManualKillBtn = document.getElementById('adminManualKillBtn');
+  const adminPlayerLeaveBtn = document.getElementById('adminPlayerLeaveBtn');
+  const adminModalClose = document.getElementById('adminModalClose');
+  const adminResetPinModal = document.getElementById('adminResetPinModal');
+  const adminResetPinPlayerName = document.getElementById('adminResetPinPlayerName');
+  const adminResetPinInput = document.getElementById('adminResetPinInput');
+  const adminResetPinError = document.getElementById('adminResetPinError');
+  const adminResetPinCancel = document.getElementById('adminResetPinCancel');
+  const adminResetPinConfirm = document.getElementById('adminResetPinConfirm');
+  
+
+  let showDetails = false;
+  let currentAdminPlayer = null;
+
+  // Check if user is creator and show admin panel
+  function checkAdminStatus() {
+    const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+    if (creatorToken) {
+      show(adminPanel);
+      loadAdminPlayers(false);
+    } else {
+      hide(adminPanel);
+    }
+  }
+
+  function loadAdminPlayers(withDetails = false) {
+    const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+    if (!creatorToken) return;
+
+    socket.emit('admin-get-players', {
+      gameCode,
+      creatorToken,
+      showDetails: withDetails
+    });
+  }
+
+  function renderAdminPlayers(players) {
+    if (!players || players.length === 0) {
+      adminPlayersList.innerHTML = '<p>No players found.</p>';
+      return;
+    }
+
+    const html = players.map(player => {
+      const statusClass = `admin-status status-${player.status}`;
+      const statusText = player.status.charAt(0).toUpperCase() + player.status.slice(1);
+      
+      let detailsHtml = '';
+      if (showDetails) {
+        detailsHtml = `
+          <div class="smallmuted">
+            ${player.target_name ? `Target: ${escapeHtml(player.target_name)}<br>` : ''}
+            ${player.task ? `Task: ${escapeHtml(player.task)}<br>` : ''}
+            PIN: ${player.has_pin ? 'Set' : 'Not set'}
+          </div>
+        `;
+      }
+
+      return `
+        <div class="admin-player-item">
+          <div class="admin-player-info">
+            <div>${escapeHtml(player.name)}</div>
+            <div class="${statusClass}">${statusText}</div>
+            ${detailsHtml}
+          </div>
+          <div class="admin-player-actions">
+            <button class="btn ghost admin-action-btn" data-player-id="${player.id}" data-player-name="${escapeHtml(player.name)}">
+              Actions
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    adminPlayersList.innerHTML = html;
+
+    // Add event listeners to action buttons
+    document.querySelectorAll('.admin-action-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const playerId = e.target.dataset.playerId;
+        const playerName = e.target.dataset.playerName;
+        showPlayerActions(playerId, playerName);
+      });
+    });
+  }
+
+  function showPlayerActions(playerId, playerName) {
+    currentAdminPlayer = { id: playerId, name: playerName };
+    adminModalTitle.textContent = `Actions for ${playerName}`;
+    adminModalText.textContent = `Choose an action for ${playerName}`;
+    adminPlayerModal.classList.add('open');
+  }
+
+  // Event listeners
+  adminRefreshBtn.addEventListener('click', () => {
+    loadAdminPlayers(showDetails);
+  });
+
+  adminShowDetailsBtn.addEventListener('click', () => {
+    showDetails = !showDetails;
+    adminShowDetailsBtn.textContent = showDetails ? 'Hide Details' : 'Show Details';
+    loadAdminPlayers(showDetails);
+  });
+
+  adminEndGameBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to end the game? All remaining players will win.')) {
+      const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+      socket.emit('admin-end-game', { gameCode, creatorToken });
+    }
+  });
+
+  adminDeleteGameBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to delete this game? This action cannot be undone.')) {
+      const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+      socket.emit('admin-delete-game', { gameCode, creatorToken });
+    }
+  });
+
+  adminResetPinBtn.addEventListener('click', () => {
+    if (!currentAdminPlayer) return;
+    
+    adminResetPinPlayerName.textContent = currentAdminPlayer.name;
+    adminResetPinInput.value = '';
+    adminResetPinError.style.display = 'none';
+    adminResetPinConfirm.disabled = true;
+    adminResetPinModal.classList.add('open');
+    adminResetPinInput.focus();
+  });
+
+  // Validate PIN input
+  adminResetPinInput.addEventListener('input', () => {
+    const value = adminResetPinInput.value.trim();
+    if (value === '') {
+      adminResetPinConfirm.disabled = true;
+      adminResetPinError.style.display = 'none';
+    } else if (!/^\d{4}$/.test(value)) {
+      adminResetPinConfirm.disabled = true;
+      adminResetPinError.textContent = 'PIN must be exactly 4 digits';
+      adminResetPinError.style.display = 'block';
+    } else {
+      adminResetPinConfirm.disabled = false;
+      adminResetPinError.style.display = 'none';
+    }
+  });
+
+  adminResetPinInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !adminResetPinConfirm.disabled) {
+      adminResetPinConfirm.click();
+    }
+  });
+
+  adminResetPinCancel.addEventListener('click', () => {
+    adminResetPinModal.classList.remove('open');
+  });
+
+  adminResetPinConfirm.addEventListener('click', () => {
+    const newPin = adminResetPinInput.value.trim();
+    if (newPin.length === 4 && /^\d{4}$/.test(newPin) && currentAdminPlayer) {
+      const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+      socket.emit('admin-reset-pin', {
+        gameCode,
+        creatorToken,
+        playerId: currentAdminPlayer.id,
+        newPin
+      });
+      adminResetPinModal.classList.remove('open');
+    }
+  });
+
+  // Update the success handler for pin reset
+  socket.on('admin-pin-reset', (data) => {
+    toast('PIN reset successfully');
+    loadAdminPlayers(showDetails);
+    adminPlayerModal.classList.remove('open');
+  });
+
+  adminManualKillBtn.addEventListener('click', () => {
+    if (!currentAdminPlayer) return;
+    
+    if (confirm(`Manually eliminate ${currentAdminPlayer.name}? This will count as a kill for their assassin.`)) {
+      const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+      socket.emit('admin-manual-kill', {
+        gameCode,
+        creatorToken,
+        playerId: currentAdminPlayer.id
+      });
+    }
+  });
+
+  adminPlayerLeaveBtn.addEventListener('click', () => {
+    if (!currentAdminPlayer) return;
+    
+    if (confirm(`Mark ${currentAdminPlayer.name} as left? This will NOT count as a kill.`)) {
+      const creatorToken = localStorage.getItem(`creator_${gameCode}`);
+      socket.emit('admin-player-leave', {
+        gameCode,
+        creatorToken,
+        playerId: currentAdminPlayer.id
+      });
+    }
+  });
+
+  adminModalClose.addEventListener('click', () => {
+    adminPlayerModal.classList.remove('open');
+    currentAdminPlayer = null;
+  });
+
+  // Socket event handlers for admin panel
+  socket.on('admin-players-list', (data) => {
+    renderAdminPlayers(data.players);
+  });
+
+  socket.on('admin-pin-reset', (data) => {
+    toast(`PIN reset for player. New PIN: ${data.newPin}`);
+    loadAdminPlayers(showDetails);
+    adminPlayerModal.classList.remove('open');
+  });
+
+  socket.on('admin-manual-kill-success', () => {
+    toast('Manual elimination processed');
+    loadAdminPlayers(showDetails);
+    adminPlayerModal.classList.remove('open');
+  });
+
+  socket.on('admin-player-leave-success', () => {
+    toast('Player marked as left');
+    loadAdminPlayers(showDetails);
+    adminPlayerModal.classList.remove('open');
+  });
+
+  socket.on('admin-end-game-success', () => {
+    toast('Game ended successfully');
+  });
+
+  socket.on('admin-delete-game-success', () => {
+    toast('Game deleted successfully');
+    window.location.href = '/';
+  });
+
+  // Check admin status on page load and when game state changes
+  setTimeout(checkAdminStatus, 100);
+  socket.on('player-list-update', checkAdminStatus);
+  socket.on('game-state', checkAdminStatus);
+
+  
+  // ==== 
+
+
+
+
   updateDisplayedName(localStorage.getItem(playerNameKey));
 
   // Ensure startGameContainer visible if creator (initial)
   if (isCreator) startGameContainer.style.display = 'block';
 
   // initial UI
-  if (mySession) hide(selectionPhase);
-  else {
-    show(selectionPhase);
-    confirmIdentityBtn.disabled = true;
-    reclaimLobbyBtn.style.display = 'inline-block';
-    reclaimLobbyBtn.disabled = false;
-  }
+  if (mySession) {
+  // We have a session, so we're already logged in
+  hide(selectionPhase);
+  // Immediately try to restore our game state
+  socket.emit('join-game', gameCode);
+  // Set a timeout to check if we receive game state, if not, request it
+  setTimeout(() => {
+    if (role === 'lobby' && mySession) {
+      // We're still in lobby view but have a session - request game state
+      socket.emit('join-game', gameCode);
+    }
+  }, 1000);
+} else {
+  show(selectionPhase);
+  confirmIdentityBtn.disabled = true;
+  reclaimLobbyBtn.style.display = 'inline-block';
+  reclaimLobbyBtn.disabled = false;
+}
 })();
 </script>
 </body>
